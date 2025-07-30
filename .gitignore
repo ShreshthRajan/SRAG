@@ -43,11 +43,22 @@ checkpoints/
 wandb/
 logs/
 
+# Training artifacts (Step 2)
+data/expanded_apps.json
+data/categorized_apps.json
+*.safetensors
+*.bin
+*.pt
+
 # Debug and temporary files
 debug_*.py
 test_step1.py
+test_step2_comprehensive.py
+test_*.py
 *_debug.py
 *.tmp
+download_models.py
+expand_dataset.py
 
 # IDE
 .vscode/
