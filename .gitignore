@@ -43,6 +43,12 @@ checkpoints/
 wandb/
 logs/
 
+# Debug and temporary files
+debug_*.py
+test_step1.py
+*_debug.py
+*.tmp
+
 # IDE
 .vscode/
 .idea/

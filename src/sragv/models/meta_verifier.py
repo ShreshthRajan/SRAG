@@ -203,6 +203,10 @@ Validate all {len(test_cases)} test cases:"""
         logger.info(f"Parsed {len(validations)} test validations")
         return validations
     
+    def generate(self, **kwargs) -> Any:
+        """Main generation method - delegates to validate_test_cases."""
+        return self.validate_test_cases(**kwargs)
+    
     def validate_test_cases(
         self,
         problem: Dict,
