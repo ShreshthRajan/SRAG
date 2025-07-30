@@ -1,0 +1,72 @@
+sragv:
+  # ML Foundry Configuration
+  foundry:
+    api_key: ${oc.env:ML_FOUNDRY_API_KEY}
+    project_id: ${oc.env:ML_FOUNDRY_PROJECT_ID}
+    base_url: "https://api.mlfoundry.com/v2"
+  
+  # Model Configuration
+  models:
+    problem_generator:
+      name: "Qwen/Qwen2.5-1.5B-Instruct"
+      max_length: 2048
+      temperature: 0.8
+      top_p: 0.95
+      
+    solution_generator:
+      name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+      max_length: 4096
+      temperature: 0.8
+      top_p: 0.95
+      quantization: "4bit"
+      lora_rank: 32
+      
+    verification_generator:
+      name: "Qwen/Qwen2.5-1.5B-Instruct"
+      max_length: 2048
+      temperature: 0.7
+      top_p: 0.9
+      
+    meta_verifier:
+      name: "Qwen/Qwen2.5-0.5B-Instruct"
+      max_length: 1024
+      temperature: 0.1
+      top_p: 0.95
+
+  # Training Configuration
+  training:
+    batch_size: 8
+    gradient_accumulation_steps: 4
+    learning_rate: 5e-5
+    warmup_steps: 100
+    max_steps: 1000
+    save_steps: 100
+    logging_steps: 10
+    
+  # GRPO Configuration
+  grpo:
+    beta: 0.1
+    gamma: 0.99
+    lambda_gae: 0.95
+    clip_range: 0.2
+    
+  # MAP-Elites Configuration
+  map_elites:
+    grid_size: [3, 3, 3]  # complexity, problem_type, test_focus
+    archive_size: 27
+    mutation_rate: 0.1
+    
+  # Bootstrapping Configuration
+  bootstrap:
+    stage1_problems: 100
+    stage2_problems: 500
+    stage3_problems: 500
+    min_meta_verifier_accuracy: 0.9
+    
+  # Dataset Configuration
+  dataset:
+    name: "codeparrot/apps"
+    split: "train"
+    max_problems: 500
+    min_test_cases: 3
+    cache_dir: "./data"
