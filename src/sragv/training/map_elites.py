@@ -85,7 +85,7 @@ class BehavioralDescriptor:
         complexity_idx = min(int(self.complexity * config.complexity_levels), 
                             config.complexity_levels - 1)
         
-        # Map approach to category index
+        # Map approach to category index - ensure it fits within config bounds
         approach_categories = [
             "arithmetic", "dynamic_programming", "greedy", "graph_algorithms",
             "string_processing", "array_manipulation", "sorting", "searching",
@@ -97,6 +97,9 @@ class BehavioralDescriptor:
             approach_idx = approach_categories.index(self.approach)
         else:
             approach_idx = len(approach_categories) - 1  # "other"
+        
+        # Ensure approach index fits within configured bounds
+        approach_idx = min(approach_idx, config.approach_categories - 1)
         
         verification_idx = min(int(self.verification_difficulty * config.verification_levels),
                               config.verification_levels - 1)

@@ -160,7 +160,7 @@ class ProblemGeneratorReward:
         penalty = self._compute_penalty(problem_data)
         components['penalty'] = -penalty
         
-        final_reward = base_reward + bonus_reward - penalty
+        final_reward = max(0.0, base_reward + bonus_reward - penalty)  # Ensure non-negative
         
         return RewardMetrics(
             base_reward=base_reward,
@@ -446,7 +446,7 @@ class SolutionGeneratorReward:
         penalty = self._compute_solution_penalty(output)
         components['penalty'] = -penalty
         
-        final_reward = base_reward + bonus_reward - penalty
+        final_reward = max(0.0, base_reward + bonus_reward - penalty)  # Ensure non-negative
         
         return RewardMetrics(
             base_reward=base_reward,
@@ -718,7 +718,7 @@ class VerificationGeneratorReward:
         penalty = self._compute_verification_penalty(test_cases, output)
         components['penalty'] = -penalty
         
-        final_reward = base_reward + bonus_reward - penalty
+        final_reward = max(0.0, base_reward + bonus_reward - penalty)  # Ensure non-negative
         
         return RewardMetrics(
             base_reward=base_reward,
@@ -1057,7 +1057,7 @@ class MetaVerifierReward:
         penalty = self._compute_metaverifier_penalty(verification_result, output)
         components['penalty'] = -penalty
         
-        final_reward = base_reward + bonus_reward - penalty
+        final_reward = max(0.0, base_reward + bonus_reward - penalty)  # Ensure non-negative
         
         return RewardMetrics(
             base_reward=base_reward,
@@ -1258,8 +1258,9 @@ class MetaVerifierReward:
         if verification_result.get('overall_validity') is None:
             penalty += 0.3
         
-        # Penalty for inconsistent judgments
-        if components.get('consistency', 1.0) < 0.5:
+        # Penalty for inconsistent judgments (compute consistency here)
+        consistency = self._evaluate_consistency(verification_result)
+        if consistency < 0.5:
             penalty += 0.2
         
         # Penalty for no reasoning
