@@ -113,9 +113,14 @@ class GRPOTrainer:
             if self.config.use_8bit_optimizer:
                 try:
                     import bitsandbytes as bnb
-                    optimizer_class = bnb.optim.AdamW8bit
-                    logger.info(f"Using 8-bit optimizer for {player_name}")
-                except ImportError:
+                    # Check if 8-bit optimizers are actually available
+                    if hasattr(bnb.functional, 'cadam32bit_grad_fp32'):
+                        optimizer_class = bnb.optim.AdamW8bit
+                        logger.info(f"Using 8-bit optimizer for {player_name}")
+                    else:
+                        optimizer_class = AdamW
+                        logger.warning(f"8-bit optimizer not available (no GPU support), using standard AdamW for {player_name}")
+                except (ImportError, AttributeError):
                     optimizer_class = AdamW
                     logger.warning(f"8-bit optimizer not available, using standard AdamW for {player_name}")
             else:

@@ -137,6 +137,13 @@ class SRAGVOrchestrator:
         )
         self.meta_verifier = MetaVerifier(meta_config.to_dict())
         
+        # Load all models (sequential to avoid meta tensor issues)
+        logger.info("Loading models...")
+        self.problem_generator.load_model()
+        self.solution_generator.load_model()
+        self.verification_generator.load_model()
+        self.meta_verifier.load_model()
+        
         logger.info("All 4 players initialized successfully")
     
     def initialize_data_loaders(self):

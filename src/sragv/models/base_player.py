@@ -65,19 +65,29 @@ class BasePlayer(ABC):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        # Configure quantization if specified
+        # Configure quantization if specified and GPU available
         quantization_config = None
-        if self.quantization == "4bit":
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-        elif self.quantization == "8bit":
-            quantization_config = BitsAndBytesConfig(
-                load_in_8bit=True,
-            )
+        if self.quantization in ["4bit", "8bit"]:
+            try:
+                import bitsandbytes as bnb
+                # Check if bitsandbytes has GPU support
+                if hasattr(bnb.functional, 'cadam32bit_grad_fp32'):
+                    if self.quantization == "4bit":
+                        quantization_config = BitsAndBytesConfig(
+                            load_in_4bit=True,
+                            bnb_4bit_quant_type="nf4",
+                            bnb_4bit_compute_dtype=torch.float16,
+                            bnb_4bit_use_double_quant=True,
+                        )
+                    elif self.quantization == "8bit":
+                        quantization_config = BitsAndBytesConfig(
+                            load_in_8bit=True,
+                        )
+                    logger.info(f"Using {self.quantization} quantization")
+                else:
+                    logger.warning(f"Quantization requested but bitsandbytes has no GPU support, loading in fp32")
+            except (ImportError, AttributeError):
+                logger.warning(f"Quantization requested but bitsandbytes not available, loading in fp32")
         
         # Load model
         self.model = AutoModelForCausalLM.from_pretrained(
