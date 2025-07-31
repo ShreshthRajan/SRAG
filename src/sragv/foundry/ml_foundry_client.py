@@ -130,35 +130,67 @@ class MLFoundryClient:
         # Create startup script with all training code
         startup_script = self._create_startup_script()
         
-        # Create spot bid payload
-        bid_payload = {
-            "project": self.project_id,
-            "name": f"sragv-step2-training-{int(time.time())}",
-            "region": "us-central1-a",  # Default region
-            "instance_type": instance_type,
-            "limit_price": "$20.00",  # Conservative price limit
-            "instance_quantity": 1,
-            "launch_specification": {
-                "startup_script": startup_script
+        # Get registered SSH key ID
+        ssh_key_id = self._get_ssh_key_id()
+        
+        # Use working regions only - avoid outages
+        region_configs = [
+            {"region": "us-central1-a"},  # Working region 
+            {"region": "us-central2-a"},  # Working region with H100s
+            {"region": "eu-central1-a"},  # Working region
+            # Skip eu-central1-b (new instances not starting)
+            # Skip us-central1-b (maintenance scheduled Aug 1)
+        ]
+        
+        for config in region_configs:
+            # Create spot bid payload
+            bid_payload = {
+                "project": self.project_id,
+                "name": f"sragv-step2-training-{int(time.time())}",
+                "instance_type": instance_type,
+                "limit_price": "$20.00",  # Conservative price limit
+                "instance_quantity": 1,
+                "launch_specification": {
+                    "startup_script": startup_script,
+                    "volumes": [],  # Required field - empty for now
+                    "ssh_keys": [ssh_key_id]  # Use SSH key ID
+                }
             }
-        }
+            
+            # Add region if specified
+            if "region" in config:
+                bid_payload["region"] = config["region"]
+                logger.info(f"Trying region: {config['region']}")
+            else:
+                logger.info("Trying without region specification (auto-select)")
+            
+            response = requests.post(
+                f"{self.base_url}/spot/bids",
+                headers=self.headers,
+                json=bid_payload
+            )
+            
+            if response.status_code in [200, 201]:
+                bid_data = response.json()
+                bid_id = bid_data.get('id') or bid_data.get('fid')
+                logger.info(f"✅ Training spot bid created successfully: {bid_id}")
+                region_info = config.get("region", "auto-selected")
+                logger.info(f"Instance will be provisioned in region: {region_info}")
+                return bid_id
+            elif "not available in this region" in response.text or "Region not found" in response.text:
+                region_name = config.get("region", "auto-select")
+                logger.warning(f"Configuration failed for {region_name}, trying next...")
+                continue
+            else:
+                # Different error, log it and continue trying
+                region_name = config.get("region", "auto-select")
+                logger.warning(f"Configuration {region_name} failed: {response.status_code} - {response.text}")
+                continue
         
-        response = requests.post(
-            f"{self.base_url}/spot/bids",
-            headers=self.headers,
-            json=bid_payload
-        )
-        
-        if response.status_code in [200, 201]:
-            bid_data = response.json()
-            bid_id = bid_data.get('id') or bid_data.get('fid')
-            logger.info(f"✅ Training spot bid created successfully: {bid_id}")
-            logger.info(f"Instance will be provisioned automatically")
-            return bid_id
-        else:
-            error_msg = f"Failed to create spot bid: {response.status_code} - {response.text}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+        # If we get here, all configurations failed
+        error_msg = f"Failed to create spot bid in all regions: {response.status_code} - {response.text}"
+        logger.error(error_msg)
+        raise Exception(error_msg)
     
     def _prepare_training_files(self) -> Dict[str, str]:
         """Prepare training files for upload."""
@@ -274,6 +306,76 @@ class MLFoundryClient:
             logger.error(f"Error checking instance types: {e}")
             return None
     
+    def _get_ssh_key_id(self) -> str:
+        """Get registered SSH key ID from ML Foundry."""
+        try:
+            # Check existing SSH keys for this project
+            response = requests.get(
+                f"{self.base_url}/ssh-keys?project={self.project_id}",
+                headers=self.headers
+            )
+            
+            if response.status_code == 200:
+                ssh_keys = response.json()
+                if ssh_keys:
+                    # Use existing SSH key
+                    ssh_key_id = ssh_keys[0].get('fid') or ssh_keys[0].get('id')
+                    logger.info(f"Using existing SSH key: {ssh_key_id}")
+                    return ssh_key_id
+            
+            # No SSH key exists, register one
+            logger.info("No SSH key found, registering new one...")
+            return self._register_ssh_key()
+            
+        except Exception as e:
+            logger.error(f"Error getting SSH key ID: {e}")
+            raise Exception(f"Could not get SSH key ID: {e}")
+    
+    def _register_ssh_key(self) -> str:
+        """Register SSH key with ML Foundry."""
+        # Read local SSH public key
+        ssh_key_paths = [
+            os.path.expanduser("~/.ssh/id_ed25519.pub"),
+            os.path.expanduser("~/.ssh/id_rsa.pub"),
+            os.path.expanduser("~/.ssh/id_ecdsa.pub")
+        ]
+        
+        ssh_public_key = None
+        for key_path in ssh_key_paths:
+            if os.path.exists(key_path):
+                try:
+                    with open(key_path, 'r') as f:
+                        ssh_public_key = f.read().strip()
+                    logger.info(f"Found SSH key: {key_path}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Could not read SSH key {key_path}: {e}")
+                    continue
+        
+        if not ssh_public_key:
+            raise Exception("No SSH public key found")
+        
+        # Register SSH key with ML Foundry
+        ssh_key_payload = {
+            "project": self.project_id,
+            "name": "sragv-training-key",
+            "public_key": ssh_public_key
+        }
+        
+        response = requests.post(
+            f"{self.base_url}/ssh-keys",
+            headers=self.headers,
+            json=ssh_key_payload
+        )
+        
+        if response.status_code in [200, 201]:
+            key_data = response.json()
+            ssh_key_id = key_data.get('fid') or key_data.get('id')
+            logger.info(f"Registered SSH key: {ssh_key_id}")
+            return ssh_key_id
+        else:
+            raise Exception(f"Failed to register SSH key: {response.status_code} - {response.text}")
+    
     def _create_startup_script(self) -> str:
         """Create startup script that downloads code from GitHub."""
         
@@ -288,7 +390,7 @@ class MLFoundryClient:
             "",
             "# Clone the training code",
             "cd /workspace",
-            "git clone https://github.com/yourusername/srag.git srag-training",
+            "git clone https://github.com/ShreshthRajan/SRAG.git srag-training",
             "cd srag-training",
             "",
             "# Create logs and checkpoints directories",
@@ -309,32 +411,61 @@ class MLFoundryClient:
         return "\n".join(script_parts)
     
     def monitor_job(self, job_id: str) -> Dict[str, Any]:
-        """Monitor training job status."""
-        response = requests.get(
-            f"{self.base_url}/jobs/{job_id}",
-            headers=self.headers
-        )
+        """Monitor spot bid/training job status."""
+        # Try spot bid endpoint first (for bid_* IDs)
+        if job_id.startswith('bid_'):
+            response = requests.get(
+                f"{self.base_url}/spot/bids/{job_id}",
+                headers=self.headers
+            )
+        else:
+            # Regular job endpoint
+            response = requests.get(
+                f"{self.base_url}/jobs/{job_id}",
+                headers=self.headers
+            )
         
         if response.status_code == 200:
             job_data = response.json()
-            status = job_data.get('status', 'unknown')
             
-            logger.info(f"Job {job_id} status: {status}")
-            
-            if status == 'completed':
-                logger.info("🎉 Training completed successfully!")
-                self._download_results(job_id)
-            elif status == 'failed':
-                error_info = job_data.get('error', 'Unknown error')
-                logger.error(f"💥 Training failed: {error_info}")
-            elif status == 'running':
-                progress = job_data.get('progress', {})
-                logger.info(f"⏳ Training in progress: {progress}")
-            
-            return job_data
+            # Handle spot bid response format
+            if job_id.startswith('bid_'):
+                status = job_data.get('status', 'unknown')
+                instance_status = job_data.get('instance_status', 'unknown')
+                
+                logger.info(f"Spot Bid {job_id} status: {status}")
+                logger.info(f"Instance status: {instance_status}")
+                
+                # Check if instance is running
+                if instance_status == 'running':
+                    logger.info("🚀 Instance is running - training in progress!")
+                elif instance_status == 'provisioning':
+                    logger.info("⏳ Instance is being provisioned...")
+                elif instance_status == 'completed':
+                    logger.info("🎉 Training completed successfully!")
+                elif instance_status == 'failed':
+                    error_info = job_data.get('error', 'Unknown error')
+                    logger.error(f"💥 Training failed: {error_info}")
+                
+                return job_data
+            else:
+                # Regular job monitoring
+                status = job_data.get('status', 'unknown')
+                logger.info(f"Job {job_id} status: {status}")
+                
+                if status == 'completed':
+                    logger.info("🎉 Training completed successfully!")
+                elif status == 'failed':
+                    error_info = job_data.get('error', 'Unknown error')
+                    logger.error(f"💥 Training failed: {error_info}")
+                elif status == 'running':
+                    progress = job_data.get('progress', {})
+                    logger.info(f"⏳ Training in progress: {progress}")
+                
+                return job_data
         else:
-            logger.error(f"Failed to get job status: {response.status_code}")
-            return {}
+            logger.error(f"Failed to get job status: {response.status_code} - {response.text}")
+            return {"status": "unknown", "error": f"API error: {response.status_code}"}
     
     def _download_results(self, job_id: str):
         """Download training results."""
