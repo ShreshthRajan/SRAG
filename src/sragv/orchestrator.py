@@ -59,7 +59,6 @@ class SRAGVOrchestrator:
         self.config = self.load_config()
 
 
-
         # Initialize players (will be loaded on demand)
         self.problem_generator = None
         self.solution_generator = None
