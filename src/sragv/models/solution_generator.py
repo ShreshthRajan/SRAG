@@ -268,7 +268,8 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
         problem: Dict,
         previous_attempts: Optional[List[str]] = None,
         num_solutions: int = 14,  # Reduced from 16 for stability
-        max_retry_attempts: int = 5  # More retries for robust generation
+        max_retry_attempts: int = 5,  # More retries for robust generation
+        max_attempts_per_solution: int = 3  # Maximum attempts per solution for training compatibility
     ) -> List[Dict]:
         """Generate multiple diverse solutions using SOTA Qwen2.5-Coder techniques."""
         problem_id = problem.get('problem_id', 'unknown')
@@ -291,7 +292,9 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
                 base_temp = 0.7  # Higher temperature for diversity
             
             # Try multiple attempts with different strategies
-            for attempt in range(max_retry_attempts):
+            # Use max_attempts_per_solution if provided, otherwise default to max_retry_attempts
+            attempts_to_use = max_attempts_per_solution if max_attempts_per_solution is not None else max_retry_attempts
+            for attempt in range(attempts_to_use):
                 try:
                     # Create chat messages using proper Qwen2.5-Coder format
                     messages = self.process_input(

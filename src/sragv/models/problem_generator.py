@@ -407,7 +407,8 @@ PROBLEM_TITLE:"""
         success_rate_histogram: Dict,
         problem_type_distribution: Dict,
         archive: List[Dict],
-        batch_size: int = 32
+        batch_size: int = 32,
+        difficulty_scaling: float = 1.0  # Scaling factor for problem difficulty
     ) -> List[Dict]:
         """Generate a diverse batch of problems using MAP-Elites diversity mechanism."""
         logger.info(f"Generating diverse batch of {batch_size} problems")
@@ -418,10 +419,22 @@ PROBLEM_TITLE:"""
         targets = []
         for _ in range(batch_size):
             # Sample difficulty based on inverse success rate (harder problems get more samples)
+            # Apply difficulty scaling to bias toward harder problems when scaling > 1.0
             difficulties = list(success_rate_histogram.keys())
             weights = [1 - success_rate_histogram[d] for d in difficulties]
-            weights = [w / sum(weights) for w in weights]  # Normalize
             
+            # Apply difficulty scaling: higher scaling increases weight of harder difficulties
+            if difficulty_scaling > 1.0:
+                # Map difficulty names to numeric values for scaling
+                difficulty_levels = {"easy": 1, "medium": 2, "hard": 3, "interview": 2, "competition": 3}
+                scaled_weights = []
+                for i, d in enumerate(difficulties):
+                    level = difficulty_levels.get(d, 2)  # Default to medium
+                    scale_factor = difficulty_scaling ** (level - 1)  # Exponential scaling
+                    scaled_weights.append(weights[i] * scale_factor)
+                weights = scaled_weights
+            
+            weights = [w / sum(weights) for w in weights]  # Normalize
             target_difficulty = np.random.choice(difficulties, p=weights)
             
             # Sample problem type based on distribution
