@@ -1,41 +1,111 @@
 #!/usr/bin/env python3
 """
-SRAG-V Step 2: Core Training Loop Implementation
+BULLETPROOF SRAG-V Step 2: Core Training Loop Implementation
 Complete integration of GRPO, MAP-Elites, and 4-player self-play training.
 
 This script implements the breakthrough-level self-play training system
-with emergent verification learning capabilities.
+with emergent verification learning capabilities and bulletproof error handling.
 """
 
 import logging
 import sys
 import os
 import time
+import signal
+import psutil
+import gc
 from pathlib import Path
 import json
 import traceback
+from datetime import datetime
+from typing import Optional
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from sragv.orchestrator import SRAGVOrchestrator
-from sragv.training.self_play_trainer import SelfPlayTrainer, SelfPlayConfig
-from sragv.training.grpo_trainer import GRPOConfig
-from sragv.training.map_elites import MAPElitesConfig
+# Import with bulletproof error handling
+try:
+    from sragv.orchestrator import SRAGVOrchestrator
+    from sragv.training.self_play_trainer import SelfPlayTrainer, SelfPlayConfig
+    from sragv.training.grpo_trainer import GRPOConfig
+    from sragv.training.map_elites import MAPElitesConfig
+    logger_import_success = True
+except ImportError as e:
+    print(f"CRITICAL IMPORT ERROR: {e}")
+    logger_import_success = False
 
-# Setup comprehensive logging
+# Create comprehensive directory structure
+for dir_name in ["logs", "checkpoints", "monitoring", "artifacts"]:
+    Path(dir_name).mkdir(exist_ok=True)
+
+# Setup bulletproof logging with multiple outputs
+log_filename = f"logs/step2_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # More verbose for debugging
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('logs/step2_training.log')
+        logging.FileHandler(log_filename),
+        logging.FileHandler('logs/step2_training_latest.log')  # Always latest
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Create logs directory
-Path("logs").mkdir(exist_ok=True)
+# Global training state for graceful shutdown
+training_state = {
+    "trainer": None,
+    "should_stop": False,
+    "current_iteration": 0,
+    "last_checkpoint": None
+}
+
+def signal_handler(signum, frame):
+    """Handle graceful shutdown on signals."""
+    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+    training_state["should_stop"] = True
+    
+    if training_state["trainer"]:
+        try:
+            logger.info("💾 Creating emergency checkpoint...")
+            training_state["trainer"].save_checkpoint(f"checkpoints/emergency_checkpoint_iter_{training_state['current_iteration']}.pt")
+        except Exception as e:
+            logger.error(f"❌ Emergency checkpoint failed: {e}")
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+def log_system_info():
+    """Log comprehensive system information."""
+    logger.info("🖥️ SYSTEM INFORMATION:")
+    logger.info(f"  Python: {sys.version}")
+    logger.info(f"  PID: {os.getpid()}")
+    logger.info(f"  Working Directory: {os.getcwd()}")
+    
+    try:
+        import torch
+        logger.info(f"  PyTorch: {torch.__version__}")
+        logger.info(f"  CUDA Available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            logger.info(f"  CUDA Version: {torch.version.cuda}")
+            logger.info(f"  GPU Count: {torch.cuda.device_count()}")
+            for i in range(torch.cuda.device_count()):
+                gpu_name = torch.cuda.get_device_name(i)
+                gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1e9
+                logger.info(f"  GPU {i}: {gpu_name} ({gpu_memory:.1f} GB)")
+    except Exception as e:
+        logger.error(f"❌ Failed to get PyTorch info: {e}")
+    
+    # System resources
+    try:
+        cpu_count = psutil.cpu_count()
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        logger.info(f"  CPU Cores: {cpu_count}")
+        logger.info(f"  Memory: {memory.total / 1e9:.1f} GB total, {memory.available / 1e9:.1f} GB available")
+        logger.info(f"  Disk: {disk.total / 1e9:.1f} GB total, {disk.free / 1e9:.1f} GB free")
+    except Exception as e:
+        logger.error(f"❌ Failed to get system info: {e}")
 
 
 def validate_prerequisites():
@@ -304,62 +374,192 @@ def analyze_and_report_results(results: dict):
     logger.info(f"📋 Detailed report saved to: {report_path}")
 
 
+def cleanup_resources():
+    """Clean up resources and memory."""
+    logger.info("🧹 Cleaning up resources...")
+    try:
+        # Force garbage collection
+        gc.collect()
+        
+        # Clear CUDA cache if available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.info("  ✅ CUDA cache cleared")
+        except:
+            pass
+        
+        # Clear training state
+        training_state["trainer"] = None
+        training_state["should_stop"] = False
+        
+        logger.info("  ✅ Resource cleanup complete")
+    except Exception as e:
+        logger.error(f"  ❌ Cleanup error: {e}")
+
 def main():
-    """Main execution function for Step 2 training."""
-    logger.info("🚀 SRAG-V STEP 2: CORE TRAINING LOOP IMPLEMENTATION")
-    logger.info("=" * 80)
-    logger.info("Implementing breakthrough-level self-play training with:")
-    logger.info("  ✓ GRPO (Group Relative Policy Optimization)")
-    logger.info("  ✓ MAP-Elites diversity mechanism")
-    logger.info("  ✓ Role-conditioned reward system")
-    logger.info("  ✓ Emergent behavior tracking")
-    logger.info("  ✓ 12-iteration self-play protocol")
-    logger.info("=" * 80)
+    """BULLETPROOF main execution function for Step 2 training."""
+    start_time = time.time()
+    exit_code = 1  # Default to failure
     
     try:
-        # Step 1: Validate prerequisites
-        if not validate_prerequisites():
-            logger.error("❌ Prerequisites validation failed")
+        logger.info("🛡️ BULLETPROOF SRAG-V STEP 2: CORE TRAINING LOOP IMPLEMENTATION")
+        logger.info("=" * 80)
+        logger.info("Implementing breakthrough-level self-play training with:")
+        logger.info("  ✓ GRPO (Group Relative Policy Optimization)")
+        logger.info("  ✓ MAP-Elites diversity mechanism")
+        logger.info("  ✓ Role-conditioned reward system")
+        logger.info("  ✓ Emergent behavior tracking")
+        logger.info("  ✓ 12-iteration self-play protocol")
+        logger.info("  ✓ Bulletproof error handling & recovery")
+        logger.info("  ✓ Comprehensive monitoring & logging")
+        logger.info("=" * 80)
+        
+        # Log system information
+        log_system_info()
+        
+        # Check import success
+        if not logger_import_success:
+            logger.error("❌ Critical imports failed - cannot proceed")
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write('FAILED:IMPORT_ERROR')
+            return 1
+        
+        # Step 1: Validate prerequisites with bulletproof error handling
+        logger.info("🔍 Step 1: Prerequisites Validation")
+        try:
+            if not validate_prerequisites():
+                logger.error("❌ Prerequisites validation failed")
+                with open('/workspace/training_status.txt', 'w') as f:
+                    f.write('FAILED:PREREQUISITES')
+                return 1
+            logger.info("✅ Prerequisites validated successfully")
+        except Exception as e:
+            logger.error(f"❌ Prerequisites validation error: {e}")
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write(f'FAILED:PREREQUISITES_ERROR:{str(e)[:100]}')
             return 1
         
         # Step 2: Create training configuration
-        config = create_optimized_training_config()
+        logger.info("⚙️ Step 2: Configuration Creation")
+        try:
+            config = create_optimized_training_config()
+            logger.info("✅ Training configuration created successfully")
+        except Exception as e:
+            logger.error(f"❌ Configuration creation failed: {e}")
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write(f'FAILED:CONFIG_ERROR:{str(e)[:100]}')
+            return 1
         
         # Step 3: Initialize training system
-        orchestrator, trainer = initialize_training_system(config)
+        logger.info("🚀 Step 3: Training System Initialization")
+        try:
+            orchestrator, trainer = initialize_training_system(config)
+            training_state["trainer"] = trainer  # Store for signal handler
+            logger.info("✅ Training system initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Training system initialization failed: {e}")
+            logger.error("Full traceback:")
+            for line in traceback.format_exc().splitlines():
+                logger.error(f"  {line}")
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write(f'FAILED:INIT_ERROR:{str(e)[:100]}')
+            return 1
         
-        # Step 4: Run training with monitoring
-        logger.info("🎯 Launching self-play training...")
-        results = run_training_with_monitoring(trainer)
+        # Step 4: Run training with comprehensive monitoring
+        logger.info("🎯 Step 4: Bulletproof Training Execution")
+        try:
+            # Update status to running
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write('RUNNING')
+            
+            results = run_training_with_monitoring(trainer)
+            logger.info("✅ Training execution completed")
+        except KeyboardInterrupt:
+            logger.info("🛑 Training interrupted by user")
+            results = {"status": "interrupted", "error": "User interrupt"}
+        except Exception as e:
+            logger.error(f"❌ Training execution failed: {e}")
+            logger.error("Full traceback:")
+            for line in traceback.format_exc().splitlines():
+                logger.error(f"  {line}")
+            results = {"status": "failed", "error": str(e)}
         
         # Step 5: Analyze and report results
-        analyze_and_report_results(results)
+        logger.info("📊 Step 5: Results Analysis and Reporting")
+        try:
+            analyze_and_report_results(results)
+            logger.info("✅ Results analysis completed")
+        except Exception as e:
+            logger.error(f"❌ Results analysis failed: {e}")
+            # Don't fail the entire training for reporting errors
         
-        # Return success/failure code
+        # Determine final status and exit code
         status = results.get("status", "completed")
         if status == "completed":
             breakthrough_score = results.get("breakthrough_indicators", {}).get("breakthrough_score", 0.0)
             if breakthrough_score > 0.5:
                 logger.info("🎉 STEP 2 SUCCESSFULLY COMPLETED WITH BREAKTHROUGH POTENTIAL!")
-                return 0
+                with open('/workspace/training_status.txt', 'w') as f:
+                    f.write('SUCCESS:BREAKTHROUGH')
+                exit_code = 0
             else:
                 logger.info("✅ STEP 2 COMPLETED - READY FOR STEP 3")
-                return 0
+                with open('/workspace/training_status.txt', 'w') as f:
+                    f.write('SUCCESS:COMPLETED')
+                exit_code = 0
         elif status == "interrupted":
             logger.info("⏹️ STEP 2 INTERRUPTED - PARTIAL COMPLETION")
-            return 2
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write('INTERRUPTED')
+            exit_code = 2
         else:
             logger.error("❌ STEP 2 FAILED")
-            return 1
-            
+            error_msg = results.get("error", "Unknown error")
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write(f'FAILED:{error_msg[:100]}')
+            exit_code = 1
+        
+        # Log final timing
+        total_time = time.time() - start_time
+        logger.info(f"⏱️ Total execution time: {total_time/3600:.2f} hours")
+        
     except Exception as e:
-        logger.error(f"💥 Critical error in Step 2 execution: {e}")
+        logger.error(f"💥 CRITICAL ERROR in bulletproof main: {e}")
         logger.error("Full traceback:")
         for line in traceback.format_exc().splitlines():
             logger.error(f"  {line}")
-        return 1
+        
+        with open('/workspace/training_status.txt', 'w') as f:
+            f.write(f'FAILED:CRITICAL_ERROR:{str(e)[:100]}')
+        exit_code = 1
+    
+    finally:
+        # Always clean up resources
+        cleanup_resources()
+        
+        # Log final status
+        logger.info("🏁 BULLETPROOF TRAINING SESSION COMPLETE")
+        logger.info(f"📊 Final exit code: {exit_code}")
+        
+        if exit_code == 0:
+            logger.info("🎉 Training succeeded! Ready for next steps.")
+        elif exit_code == 2:
+            logger.info("⏸️ Training was interrupted but may be resumable.")
+        else:
+            logger.info("❌ Training failed. Check logs for details.")
+    
+    return exit_code
 
 
 if __name__ == "__main__":
+    # Ensure we're in the right directory
+    os.chdir('/workspace/srag-training')
+    
+    # Run bulletproof training
     exit_code = main()
+    
+    # Final status update
+    logger.info(f"🚪 Exiting with code {exit_code}")
     sys.exit(exit_code)

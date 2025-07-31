@@ -45,162 +45,367 @@ class SolutionGenerator(BasePlayer):
         problem: Dict,
         previous_attempts: Optional[List[str]] = None,
         attempt_number: int = 1
-    ) -> str:
-        """Process input and create a prompt for solution generation."""
+    ) -> List[Dict[str, str]]:
+        """Process input and create Qwen2.5-Coder chat messages for solution generation."""
         
-        problem_desc = problem.get("description", "")
-        function_sig = problem.get("function_signature", "")
-        examples = problem.get("examples", "")
-        constraints = problem.get("constraints", "")
+        # Extract problem details
+        problem_desc = problem.get("question", problem.get("description", ""))
+        starter_code = problem.get("starter_code", "")
+        examples_raw = problem.get("input_output", {})
         
-        prompt = f"""You are an expert Python programmer. Solve the following coding problem with a correct and efficient implementation.
+        # Format examples for better readability
+        examples_text = ""
+        if examples_raw and isinstance(examples_raw, dict):
+            inputs = examples_raw.get("inputs", [])
+            outputs = examples_raw.get("outputs", [])
+            if inputs and outputs:
+                examples_text = "\nExamples:\n"
+                for i, (inp, out) in enumerate(zip(inputs[:3], outputs[:3])):  # Show max 3 examples
+                    if isinstance(inp, list):
+                        inp_str = ", ".join(str(x) for x in inp)
+                    else:
+                        inp_str = str(inp)
+                    examples_text += f"Input: {inp_str} → Output: {out}\n"
+        
+        # Create system message with SOTA techniques
+        system_message = """You are Qwen, created by Alibaba Cloud. You are an expert Python programmer specializing in competitive programming and algorithmic problem solving.
+
+Your task is to generate syntactically correct and efficient Python code. Follow these critical requirements:
+1. ALWAYS write complete, executable Python functions
+2. Use proper Python syntax with correct indentation (4 spaces)
+3. Include proper return statements
+4. Handle edge cases and validate inputs
+5. Write clean, readable code with meaningful variable names"""
+
+        # Create user message with few-shot examples for stability
+        user_message = f"""Solve this coding problem by writing a Python function.
 
 PROBLEM:
 {problem_desc}
 
-{f'FUNCTION SIGNATURE: {function_sig}' if function_sig else ''}
+{examples_text}
 
-{f'EXAMPLES: {examples}' if examples else ''}
+{f'STARTER CODE TEMPLATE:{chr(10)}{starter_code}{chr(10)}' if starter_code else ''}
 
-{f'CONSTRAINTS: {constraints}' if constraints else ''}"""
+Here are examples of well-formed solutions:
 
-        # Add previous attempts if available
-        if previous_attempts and len(previous_attempts) > 0:
-            prompt += f"\n\nPREVIOUS ATTEMPTS (avoid these approaches):\n"
-            for i, attempt in enumerate(previous_attempts[-5:], 1):  # Show last 5 attempts
-                prompt += f"\nAttempt {i}:\n```python\n{attempt}\n```\n"
-            
-            prompt += f"\nGenerate a NEW solution (attempt #{attempt_number}) that uses a different approach:"
-        else:
-            prompt += "\n\nProvide your solution:"
-        
-        prompt += """
-
-Requirements:
-1. Write clean, readable Python code
-2. Include proper error handling where appropriate
-3. Add brief comments for complex logic
-4. Ensure the solution handles all edge cases
-5. Optimize for correctness first, then efficiency
-
+Example 1 - Two Sum:
 ```python
-"""
+def two_sum(nums, target):
+    seen = {{}}
+    for i, num in enumerate(nums):
+        complement = target - num
+        if complement in seen:
+            return [seen[complement], i]
+        seen[num] = i
+    return []
+```
+
+Example 2 - Reverse String:
+```python
+def reverse_string(s):
+    return s[::-1]
+```
+
+Now solve the problem above. Write ONLY the Python function, ensure perfect syntax, and make sure it handles all test cases:"""
         
-        return prompt
+        # Add code block start separately to avoid f-string issues
+        user_message += "\n\n```python"
+
+        # Add previous attempts context if available
+        if previous_attempts and len(previous_attempts) > 0:
+            user_message += f"\n\n--- AVOID THESE PREVIOUS APPROACHES ---\n"
+            for i, attempt in enumerate(previous_attempts[-3:], 1):  # Show last 3 attempts
+                truncated_attempt = attempt[:200] + ('...' if len(attempt) > 200 else '')
+                user_message += f"\nPrevious attempt {i}:\n"
+                user_message += "```python\n" + truncated_attempt + "\n```\n"
+            
+            user_message += f"\nGenerate a DIFFERENT approach (attempt #{attempt_number}):\n\n"
+            user_message += "```python"
+        
+        # Return as chat messages for proper Qwen2.5-Coder formatting
+        return [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_message}
+        ]
     
     def parse_output(self, output: str) -> Optional[str]:
-        """Parse model output to extract Python code."""
+        """Parse model output to extract Python code with improved error handling."""
         try:
-            # Try to extract code from markdown code blocks
-            code_blocks = re.findall(r'```python(.*?)```', output, re.DOTALL)
+            # Method 1: Extract from markdown code blocks (most reliable)
+            # Extract code blocks using separate pattern construction
+            pattern = r'```python\s*(.*?)\s*```'
+            code_blocks = re.findall(pattern, output, re.DOTALL)
             if code_blocks:
                 code = code_blocks[0].strip()
-            else:
-                # Try to extract code without markdown
-                # Look for function definitions
-                lines = output.strip().split('\n')
-                code_lines = []
-                in_code = False
-                
-                for line in lines:
-                    if line.strip().startswith('def ') or in_code:
-                        code_lines.append(line)
-                        in_code = True
-                    elif in_code and line.strip() == '':
-                        code_lines.append(line)
-                    elif in_code and not line.strip().startswith(' ') and not line.strip().startswith('\t'):
-                        break
-                
-                if code_lines:
-                    code = '\n'.join(code_lines).strip()
-                else:
-                    # Last resort: take the entire output
-                    code = output.strip()
+                # Validate syntax immediately
+                try:
+                    ast.parse(code)
+                    logger.debug("Successfully extracted code from markdown block")
+                    return code
+                except SyntaxError as e:
+                    logger.warning(f"Markdown code block has syntax error: {e}")
+                    # Try to fix common issues
+                    code = self._fix_common_syntax_errors(code)
+                    try:
+                        ast.parse(code)
+                        logger.debug("Fixed syntax errors in markdown code")
+                        return code
+                    except SyntaxError:
+                        pass  # Continue to other methods
             
-            # Validate that it's syntactically correct Python
-            try:
-                ast.parse(code)
-                return code
-            except SyntaxError as e:
-                logger.warning(f"Generated code has syntax error: {e}")
-                return code  # Return anyway, might be fixable
+            # Method 2: Look for function definitions (more aggressive)
+            lines = output.strip().split('\n')
+            code_lines = []
+            in_function = False
+            indent_level = 0
+            
+            for line in lines:
+                stripped = line.strip()
+                
+                # Start of function
+                if stripped.startswith('def ') and ':' in stripped:
+                    in_function = True
+                    code_lines = [line]  # Start fresh
+                    indent_level = len(line) - len(line.lstrip())
+                elif in_function:
+                    # Continue function body
+                    if line.strip() == '' or line.startswith(' ' * (indent_level + 1)) or line.startswith('\t'):
+                        code_lines.append(line)
+                    elif stripped and not line.startswith(' ' * indent_level) and not line.startswith('\t'):
+                        # End of function
+                        break
+                    else:
+                        code_lines.append(line)
+            
+            if code_lines and in_function:
+                code = '\n'.join(code_lines).strip()
+                try:
+                    ast.parse(code)
+                    logger.debug("Successfully extracted function definition")
+                    return code
+                except SyntaxError as e:
+                    logger.warning(f"Function extraction has syntax error: {e}")
+                    # Try to fix
+                    code = self._fix_common_syntax_errors(code)
+                    try:
+                        ast.parse(code)
+                        logger.debug("Fixed syntax errors in extracted function")
+                        return code
+                    except SyntaxError:
+                        pass
+            
+            # Method 3: Last resort - clean up the entire output
+            cleaned_output = self._clean_output(output)
+            if cleaned_output:
+                try:
+                    ast.parse(cleaned_output)
+                    logger.debug("Successfully cleaned entire output")
+                    return cleaned_output
+                except SyntaxError as e:
+                    logger.warning(f"Cleaned output still has syntax error: {e}")
+                    return None  # Give up rather than return broken code
+            
+            logger.warning("Failed to extract valid Python code from output")
+            return None
                 
         except Exception as e:
-            logger.warning(f"Failed to parse solution output: {e}")
-            return output.strip()  # Return raw output as fallback
+            logger.error(f"Critical error in parse_output: {e}")
+            return None
+    
+    def _fix_common_syntax_errors(self, code: str) -> str:
+        """Fix common syntax errors in generated code."""
+        try:
+            # Fix unterminated strings (replace smart quotes)
+            code = code.replace('"', '"').replace('"', '"')
+            code = code.replace(''', "'").replace(''', "'")
+            
+            # Fix common indentation issues
+            lines = code.split('\n')
+            fixed_lines = []
+            for line in lines:
+                # Convert tabs to 4 spaces
+                line = line.expandtabs(4)
+                # Fix mixed indentation
+                if line.strip():
+                    leading_spaces = len(line) - len(line.lstrip())
+                    if leading_spaces > 0:
+                        # Ensure indentation is multiple of 4
+                        new_indent = (leading_spaces // 4) * 4
+                        if new_indent != leading_spaces:
+                            line = ' ' * new_indent + line.lstrip()
+                fixed_lines.append(line)
+            
+            return '\n'.join(fixed_lines)
+        except Exception:
+            return code
+    
+    def _clean_output(self, output: str) -> str:
+        """Clean and extract code from raw output."""
+        try:
+            # Remove common prefixes/suffixes
+            output = output.strip()
+            
+            # Remove explanation text before code
+            lines = output.split('\n')
+            code_start = -1
+            
+            for i, line in enumerate(lines):
+                if line.strip().startswith('def ') or line.strip().startswith('class '):
+                    code_start = i
+                    break
+            
+            if code_start >= 0:
+                relevant_lines = lines[code_start:]
+                return '\n'.join(relevant_lines).strip()
+            
+            return output
+        except Exception:
+            return output
     
     def generate(
         self,
         problem: Dict,
         previous_attempts: Optional[List[str]] = None,
-        num_solutions: int = 16,
-        max_attempts_per_solution: int = 3
+        num_solutions: int = 14,  # Reduced from 16 for stability
+        max_retry_attempts: int = 5  # More retries for robust generation
     ) -> List[Dict]:
-        """Generate multiple diverse solutions for a problem."""
-        logger.info(f"Generating {num_solutions} solutions for problem {problem.get('problem_id', 'unknown')}")
+        """Generate multiple diverse solutions using SOTA Qwen2.5-Coder techniques."""
+        problem_id = problem.get('problem_id', 'unknown')
+        logger.info(f"Generating {num_solutions} solutions for problem {problem_id}")
         
         solutions = []
         all_attempts = previous_attempts or []
+        valid_solutions_count = 0
         
         for i in range(num_solutions):
-            best_solution = None
-            best_score = -1
+            solution_generated = False
             
-            # Try multiple attempts for each solution to get the best one
-            for attempt in range(max_attempts_per_solution):
+            # SOTA technique: Start with temperature=0 for first few solutions (deterministic)
+            # Then increase temperature for diversity
+            if i < 3:
+                base_temp = 0.0  # Deterministic for stability
+            elif i < 8:
+                base_temp = 0.3  # Low temperature for quality
+            else:
+                base_temp = 0.7  # Higher temperature for diversity
+            
+            # Try multiple attempts with different strategies
+            for attempt in range(max_retry_attempts):
                 try:
-                    # Create prompt
-                    prompt = self.process_input(
+                    # Create chat messages using proper Qwen2.5-Coder format
+                    messages = self.process_input(
                         problem=problem,
-                        previous_attempts=all_attempts,
-                        attempt_number=len(all_attempts) + 1
+                        previous_attempts=all_attempts if attempt > 0 else [],  # Only show previous attempts after first try
+                        attempt_number=i + 1
                     )
                     
-                    # Generate response with some temperature for diversity
-                    temp = self.temperature + (i * 0.05)  # Increase temp for later solutions
-                    temp = min(temp, 1.0)  # Cap at 1.0
+                    # Apply temperature variation for retries
+                    current_temp = base_temp + (attempt * 0.1)
+                    current_temp = min(current_temp, 0.9)  # Cap temperature
                     
+                    # Generate using chat template (this will be handled by BasePlayer)
                     outputs = self.generate_text(
-                        prompt=prompt,
-                        max_new_tokens=1024,
-                        temperature=temp,
-                        top_p=self.top_p,
-                        num_return_sequences=1
+                        messages=messages,  # Pass messages instead of prompt
+                        max_new_tokens=512,  # Reduced for more focused generation
+                        temperature=current_temp,
+                        top_p=0.95,
+                        do_sample=current_temp > 0.0,  # Only sample if temperature > 0
+                        num_return_sequences=1,
+                        pad_token_id=self.tokenizer.eos_token_id if hasattr(self, 'tokenizer') else None
                     )
                     
-                    if outputs:
-                        # Parse solution
+                    if outputs and len(outputs) > 0:
+                        # Parse solution with improved error handling
                         code = self.parse_output(outputs[0])
-                        if code:
+                        
+                        if code and self._validate_code_quality(code, problem):
                             # Score the solution
                             score = self.score_solution(code, problem)
                             
-                            if score > best_score:
-                                best_solution = code
-                                best_score = score
+                            # Accept solution if it meets quality threshold
+                            if score >= 0.4:  # Minimum quality threshold
+                                solution_data = {
+                                    "solution_id": f"sol_{i+1:02d}",
+                                    "code": code,
+                                    "score": score,
+                                    "attempt_number": i + 1,
+                                    "generation_temperature": current_temp,
+                                    "retry_attempt": attempt + 1
+                                }
+                                solutions.append(solution_data)
+                                all_attempts.append(code)
+                                valid_solutions_count += 1
+                                solution_generated = True
+                                
+                                logger.debug(f"✅ Generated solution {i+1}/{num_solutions} (score: {score:.3f}, temp: {current_temp:.2f})")
+                                break
+                        else:
+                            logger.debug(f"⚠️ Solution {i+1} attempt {attempt+1} failed validation")
+                    else:
+                        logger.debug(f"⚠️ No output generated for solution {i+1} attempt {attempt+1}")
                     
                 except Exception as e:
-                    logger.warning(f"Error generating solution {i+1}, attempt {attempt+1}: {e}")
+                    logger.warning(f"❌ Error generating solution {i+1}, attempt {attempt+1}: {e}")
                     continue
             
-            # Add best solution to results
-            if best_solution:
-                solution_data = {
-                    "solution_id": f"sol_{i+1:02d}",
-                    "code": best_solution,
-                    "score": best_score,
-                    "attempt_number": len(all_attempts) + 1,
-                    "generation_temperature": temp
-                }
-                solutions.append(solution_data)
-                all_attempts.append(best_solution)
-                
-                logger.debug(f"Generated solution {i+1}/{num_solutions} (score: {best_score:.3f})")
-            else:
-                logger.warning(f"Failed to generate solution {i+1}/{num_solutions}")
+            if not solution_generated:
+                logger.warning(f"❌ Failed to generate valid solution {i+1}/{num_solutions} after {max_retry_attempts} attempts")
         
-        logger.info(f"Successfully generated {len(solutions)} solutions")
+        success_rate = (valid_solutions_count / num_solutions) * 100
+        logger.info(f"✅ Generated {valid_solutions_count}/{num_solutions} solutions (success rate: {success_rate:.1f}%)")
+        
+        # Sort solutions by score (best first)
+        solutions.sort(key=lambda x: x.get("score", 0), reverse=True)
+        
         return solutions
+    
+    def _validate_code_quality(self, code: str, problem: Dict) -> bool:
+        """Validate code quality before accepting as solution."""
+        try:
+            # Must be syntactically valid
+            try:
+                ast.parse(code)
+            except SyntaxError as e:
+                logger.debug(f"Code failed syntax check: {e}")
+                return False
+            
+            # Must contain a function definition
+            if 'def ' not in code:
+                logger.debug("Code missing function definition")
+                return False
+            
+            # Must have a return statement (basic requirement)
+            if 'return' not in code:
+                logger.debug("Code missing return statement")
+                return False
+            
+            # Must be reasonable length (not too short or too long)
+            lines = [line for line in code.split('\n') if line.strip()]
+            if len(lines) < 2 or len(lines) > 100:
+                logger.debug(f"Code length unreasonable: {len(lines)} lines")
+                return False
+            
+            # Check for common problematic patterns
+            problematic_patterns = [
+                'import os',  # Potential security issue
+                'exec(',     # Dangerous
+                'eval(',     # Dangerous
+                '...',       # Placeholder code
+                'pass',      # Incomplete implementation
+            ]
+            
+            code_lower = code.lower()
+            for pattern in problematic_patterns:
+                if pattern in code_lower:
+                    logger.debug(f"Code contains problematic pattern: {pattern}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Code validation error: {e}")
+            return False
     
     def score_solution(self, code: str, problem: Dict) -> float:
         """Score a solution based on various criteria."""

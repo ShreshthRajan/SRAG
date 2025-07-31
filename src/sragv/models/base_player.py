@@ -13,14 +13,20 @@ from transformers import (
     BitsAndBytesConfig,
     TrainingArguments
 )
-from peft import (
-    LoraConfig,
-    get_peft_model,
-    TaskType,
-    PeftModel
-)
 
 logger = logging.getLogger(__name__)
+
+try:
+    from peft import (
+        LoraConfig,
+        get_peft_model,
+        TaskType,
+        PeftModel
+    )
+    PEFT_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"PEFT not available: {e}. LoRA functionality will be disabled.")
+    PEFT_AVAILABLE = False
 
 
 class BasePlayer(ABC):
@@ -99,8 +105,8 @@ class BasePlayer(ABC):
             low_cpu_mem_usage=True
         )
         
-        # Setup LoRA if configured
-        if self.lora_config:
+        # Setup LoRA if configured and available
+        if self.lora_config and PEFT_AVAILABLE:
             logger.info("Setting up LoRA adapters...")
             lora_config = LoraConfig(
                 task_type=TaskType.CAUSAL_LM,
@@ -112,19 +118,23 @@ class BasePlayer(ABC):
             )
             self.peft_model = get_peft_model(self.model, lora_config)
             logger.info(f"LoRA setup complete. Trainable parameters: {self.peft_model.print_trainable_parameters()}")
+        elif self.lora_config and not PEFT_AVAILABLE:
+            logger.warning("LoRA configuration provided but PEFT not available. Using base model only.")
         
         logger.info(f"Model {self.model_name} loaded successfully")
     
     def generate_text(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
+        messages: Optional[List[Dict[str, str]]] = None,
         max_new_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
         num_return_sequences: int = 1,
-        do_sample: bool = True
+        do_sample: bool = True,
+        pad_token_id: Optional[int] = None
     ) -> List[str]:
-        """Generate text from a prompt."""
+        """Generate text from a prompt or chat messages (SOTA Qwen2.5-Coder format)."""
         if self.model is None:
             self.load_model()
         
@@ -133,9 +143,34 @@ class BasePlayer(ABC):
         top_p = top_p if top_p is not None else self.top_p
         max_new_tokens = max_new_tokens if max_new_tokens is not None else self.max_length // 2
         
+        # Handle both prompt and messages format
+        if messages is not None:
+            # Use chat template for messages (SOTA approach for Qwen2.5-Coder)
+            try:
+                formatted_prompt = self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
+            except Exception as e:
+                logger.warning(f"Chat template failed, falling back to simple format: {e}")
+                # Fallback: simple concatenation
+                formatted_prompt = ""
+                for msg in messages:
+                    role = msg.get("role", "")
+                    content = msg.get("content", "")
+                    if role == "system":
+                        formatted_prompt += f"System: {content}\n\n"
+                    elif role == "user":
+                        formatted_prompt += f"User: {content}\n\nAssistant: "
+        elif prompt is not None:
+            formatted_prompt = prompt
+        else:
+            raise ValueError("Either prompt or messages must be provided")
+        
         # Tokenize input
         inputs = self.tokenizer(
-            prompt,
+            formatted_prompt,
             return_tensors="pt",
             truncation=True,
             max_length=self.max_length,
@@ -145,27 +180,37 @@ class BasePlayer(ABC):
         if torch.cuda.is_available():
             inputs = {k: v.cuda() for k, v in inputs.items()}
         
-        # Generate
+        # Generate with improved parameters for stability
         model_to_use = self.peft_model if self.peft_model else self.model
         
+        generation_kwargs = {
+            **inputs,
+            "max_new_tokens": max_new_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "num_return_sequences": num_return_sequences,
+            "do_sample": do_sample,
+            "pad_token_id": pad_token_id or self.tokenizer.eos_token_id,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "repetition_penalty": 1.05,  # Reduced for better quality
+            "length_penalty": 1.0,
+        }
+        
+        # Remove None values to avoid errors
+        generation_kwargs = {k: v for k, v in generation_kwargs.items() if v is not None}
+        
         with torch.no_grad():
-            outputs = model_to_use.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                num_return_sequences=num_return_sequences,
-                do_sample=do_sample,
-                pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-                repetition_penalty=1.1
-            )
+            try:
+                outputs = model_to_use.generate(**generation_kwargs)
+            except Exception as e:
+                logger.error(f"Generation failed: {e}")
+                return []
         
         # Decode outputs
         generated_texts = []
         for output in outputs:
             # Remove the input prompt from the output
-            input_length = inputs["input_ids"].shape[1]
+            input_length = inputs["input_ids"].shape[1] 
             generated_tokens = output[input_length:]
             generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
             generated_texts.append(generated_text.strip())
@@ -201,6 +246,10 @@ class BasePlayer(ABC):
     
     def load_adapter(self, adapter_path: str):
         """Load LoRA adapter."""
+        if not PEFT_AVAILABLE:
+            logger.warning("Cannot load LoRA adapter: PEFT not available")
+            return
+            
         if self.model is None:
             self.load_model()
         
