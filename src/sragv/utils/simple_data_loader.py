@@ -208,9 +208,14 @@ Example:
         
         logger.info(f"Saved {len(problems)} processed problems to {filepath}")
     
-    def load_processed_data(self, filename: str = "processed_apps.json") -> Optional[List[Dict]]:
+    def load_processed_data(self, filename: str = "expanded_apps.json") -> Optional[List[Dict]]:
         """Load previously processed problems from disk."""
         filepath = self.cache_dir / filename
+        
+        # Try expanded dataset first (2000 problems), then fall back to processed
+        if not filepath.exists() and filename == "expanded_apps.json":
+            logger.info("Expanded dataset not found, trying processed_apps.json")
+            return self.load_processed_data("processed_apps.json")
         
         if filepath.exists():
             with open(filepath, 'r') as f:
@@ -222,8 +227,8 @@ Example:
     
     def prepare_bootstrap_data(self) -> Tuple[List[Dict], Dict[str, List[Dict]]]:
         """Main method to prepare data for bootstrapping."""
-        # Try to load cached data first
-        cached_problems = self.load_processed_data()
+        # Try to load cached data first - prioritize expanded dataset
+        cached_problems = self.load_processed_data("expanded_apps.json")
         if cached_problems:
             categorized = self.categorize_problems(cached_problems)
             return cached_problems, categorized

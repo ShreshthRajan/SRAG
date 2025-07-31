@@ -133,22 +133,21 @@ class MLFoundryClient:
         # Get registered SSH key ID
         ssh_key_id = self._get_ssh_key_id()
         
-        # Use working regions only - avoid outages
+        # Post-fix priority: Use best available regions (issue fixed)
         region_configs = [
-            {"region": "us-central1-a"},  # Working region 
-            {"region": "us-central2-a"},  # Working region with H100s
-            {"region": "eu-central1-a"},  # Working region
-            # Skip eu-central1-b (new instances not starting)
-            # Skip us-central1-b (maintenance scheduled Aug 1)
+            {"region": "us-central2-a"},  # 8×H100 available, 30 capacity, $8.00
+            {"region": "eu-central1-b"},  # 4×A100 available, 17 capacity, $2.00 (FIXED)
+            {"region": "us-central1-a"},  # 8×H100 available, 1 capacity, $8.00
+            {"region": "eu-central1-a"},  # Backup option
         ]
         
         for config in region_configs:
-            # Create spot bid payload
+            # Create spot bid payload with higher bid to prevent preemption
             bid_payload = {
                 "project": self.project_id,
-                "name": f"sragv-step2-training-{int(time.time())}",
+                "name": f"sragv-step2-monitored-{int(time.time())}",
                 "instance_type": instance_type,
-                "limit_price": "$20.00",  # Conservative price limit
+                "limit_price": "$30.00",  # Higher price to prevent preemption
                 "instance_quantity": 1,
                 "launch_specification": {
                     "startup_script": startup_script,
