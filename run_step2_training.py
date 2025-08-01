@@ -452,6 +452,44 @@ def main():
                 f.write(f'FAILED:CONFIG_ERROR:{str(e)[:100]}')
             return 1
         
+        # Hardware health check before starting training
+        logger.info("🔧 Hardware Health Check")
+        try:
+            import torch
+            if torch.cuda.is_available():
+                logger.info(f"CUDA devices detected: {torch.cuda.device_count()}")
+                for i in range(torch.cuda.device_count()):
+                    device_name = torch.cuda.get_device_name(i)
+                    memory_gb = torch.cuda.get_device_properties(i).total_memory / 1e9
+                    logger.info(f"  GPU {i}: {device_name} ({memory_gb:.1f} GB)")
+                    
+                    # Test each GPU for ECC errors
+                    try:
+                        torch.cuda.set_device(i)
+                        torch.cuda.synchronize()
+                        # Create and destroy test tensor to check for memory errors
+                        test_tensor = torch.randn(1000, 1000, device=f'cuda:{i}')
+                        result = test_tensor.sum()
+                        del test_tensor
+                        torch.cuda.empty_cache()
+                        logger.info(f"  ✅ GPU {i} health check passed")
+                    except Exception as gpu_error:
+                        logger.error(f"  🚨 GPU {i} FAILED health check: {gpu_error}")
+                        logger.error(f"  This indicates potential ECC errors or hardware failure")
+                        with open('/workspace/training_status.txt', 'w') as f:
+                            f.write(f'FAILED:GPU_HARDWARE_ERROR:GPU_{i}:{str(gpu_error)[:100]}')
+                        return 1
+            else:
+                logger.error("❌ No CUDA devices detected")
+                with open('/workspace/training_status.txt', 'w') as f:
+                    f.write('FAILED:NO_CUDA')
+                return 1
+        except Exception as e:
+            logger.error(f"❌ Hardware health check failed: {e}")
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write(f'FAILED:CONFIG_ERROR:{str(e)[:100]}')
+            return 1
+        
         # Step 3: Initialize training system
         logger.info("🚀 Step 3: Training System Initialization")
         try:

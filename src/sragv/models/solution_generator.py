@@ -296,6 +296,22 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
             attempts_to_use = max_attempts_per_solution if max_attempts_per_solution is not None else max_retry_attempts
             for attempt in range(attempts_to_use):
                 try:
+                    # Hardware health check before generation
+                    import torch
+                    if torch.cuda.is_available():
+                        # Check for CUDA errors that might indicate ECC issues
+                        try:
+                            torch.cuda.synchronize()
+                            # Test GPU memory integrity with a small operation
+                            test_tensor = torch.randn(100, device='cuda:0')
+                            _ = test_tensor.sum()
+                            del test_tensor
+                            torch.cuda.empty_cache()
+                        except Exception as cuda_error:
+                            logger.error(f"🚨 CUDA/GPU error detected: {cuda_error}")
+                            logger.error(f"This may indicate ECC errors or GPU hardware failure")
+                            raise RuntimeError(f"GPU hardware error: {cuda_error}")
+                    
                     # Create chat messages using proper Qwen2.5-Coder format
                     messages = self.process_input(
                         problem=problem,
@@ -307,16 +323,28 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
                     current_temp = base_temp + (attempt * 0.1)
                     current_temp = min(current_temp, 0.9)  # Cap temperature
                     
-                    # Generate using chat template (this will be handled by BasePlayer)
-                    outputs = self.generate_text(
-                        messages=messages,  # Pass messages instead of prompt
-                        max_new_tokens=512,  # Reduced for more focused generation
-                        temperature=current_temp,
-                        top_p=0.95,
-                        do_sample=current_temp > 0.0,  # Only sample if temperature > 0
-                        num_return_sequences=1,
-                        pad_token_id=self.tokenizer.eos_token_id if hasattr(self, 'tokenizer') else None
-                    )
+                    # Generate using chat template with timeout protection
+                    import signal
+                    
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("Text generation timed out - possible GPU hang")
+                    
+                    # Set 60-second timeout for generation
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(60)
+                    
+                    try:
+                        outputs = self.generate_text(
+                            messages=messages,  # Pass messages instead of prompt
+                            max_new_tokens=512,  # Reduced for more focused generation
+                            temperature=current_temp,
+                            top_p=0.95,
+                            do_sample=current_temp > 0.0,  # Only sample if temperature > 0
+                            num_return_sequences=1,
+                            pad_token_id=self.tokenizer.eos_token_id if hasattr(self, 'tokenizer') else None
+                        )
+                    finally:
+                        signal.alarm(0)  # Cancel timeout
                     
                     if outputs and len(outputs) > 0:
                         # Parse solution with improved error handling
