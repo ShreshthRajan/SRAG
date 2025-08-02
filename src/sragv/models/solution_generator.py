@@ -9,8 +9,10 @@ from typing import Dict, List, Optional, Any
 import logging
 import ast
 import traceback
+import torch
 
 from .base_player import BasePlayer
+from ..confidence_calibration import EnhancedConfidenceCalibrator
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,18 @@ class SolutionGenerator(BasePlayer):
             quantization=config.get("quantization"),
             lora_config=config.get("lora_config")
         )
+        
+        # Initialize STAR confidence calibrator
+        self.confidence_calibrator = EnhancedConfidenceCalibrator(
+            num_classes=1,  # Regression for solution quality
+            temperature_schedule="adaptive",
+            calibration_method="temperature_scaling",
+            feature_dim=16
+        )
+        
+        # Track calibration training data
+        self.calibration_data = []
+        self.use_calibration = False  # Enable after calibrator is trained
         
     def process_input(
         self,
@@ -323,6 +337,9 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
                     current_temp = base_temp + (attempt * 0.1)
                     current_temp = min(current_temp, 0.9)  # Cap temperature
                     
+                    # Store current temperature for STAR calibration
+                    self._current_generation_temperature = current_temp
+                    
                     # Generate using chat template with timeout protection
                     import signal
                     
@@ -439,7 +456,47 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
             return False
     
     def score_solution(self, code: str, problem: Dict) -> float:
-        """Score a solution based on various criteria."""
+        """Score a solution with STAR enhanced confidence calibration."""
+        try:
+            # Compute base heuristic score
+            base_score = self._compute_heuristic_score(code, problem)
+            
+            # Apply STAR confidence calibration if trained
+            if self.use_calibration and self.confidence_calibrator.is_trained:
+                # Extract features for calibration
+                features = self.confidence_calibrator.extract_solution_features(code, problem)
+                
+                # Get current generation temperature
+                current_temp = getattr(self, '_current_generation_temperature', 1.0)
+                
+                # Apply calibrated confidence scoring
+                calibrated_score, calibration_info = self.confidence_calibrator.calibrate_confidence(
+                    base_confidence=base_score,
+                    temperature=current_temp,
+                    features=features
+                )
+                
+                # Store calibration data for analysis
+                self.calibration_data.append({
+                    'code': code,
+                    'problem_id': problem.get('problem_id', 'unknown'),
+                    'base_score': base_score,
+                    'calibrated_score': calibrated_score,
+                    'temperature': current_temp,
+                    'calibration_info': calibration_info
+                })
+                
+                return calibrated_score
+            else:
+                # Use base heuristic score when calibration not available
+                return base_score
+                
+        except Exception as e:
+            logger.warning(f"Error in STAR solution scoring: {e}")
+            return self._compute_heuristic_score(code, problem)
+    
+    def _compute_heuristic_score(self, code: str, problem: Dict) -> float:
+        """Compute base heuristic score (original scoring logic)."""
         try:
             score = 0.0
             
@@ -488,7 +545,7 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
             return score
             
         except Exception as e:
-            logger.warning(f"Error scoring solution: {e}")
+            logger.warning(f"Error computing heuristic score: {e}")
             return 0.0
     
     def execute_solution(
@@ -614,3 +671,154 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
         logger.info(f"Validation complete. Best solution pass rate: {validated_solutions[0].get('pass_rate', 0):.2%}" if validated_solutions else "No valid solutions")
         
         return validated_solutions
+    
+    # STAR Enhancement Methods
+    
+    def train_confidence_calibrator(
+        self,
+        training_data: List[Dict[str, Any]],
+        validation_data: Optional[List[Dict[str, Any]]] = None,
+        num_epochs: int = 50,
+        learning_rate: float = 0.01
+    ) -> Dict[str, float]:
+        """
+        Train the STAR confidence calibrator.
+        
+        Args:
+            training_data: List of {code, problem, base_score, true_score}
+            validation_data: Optional validation set
+            num_epochs: Training epochs
+            learning_rate: Learning rate
+        
+        Returns:
+            Training metrics including ECE
+        """
+        logger.info(f"Training STAR confidence calibrator on {len(training_data)} samples...")
+        
+        # Prepare training data for calibrator
+        calibrator_training_data = []
+        for item in training_data:
+            features = self.confidence_calibrator.extract_solution_features(
+                item['code'], item['problem']
+            )
+            calibrator_training_data.append({
+                'features': features.squeeze(0),  # Remove batch dimension
+                'base_confidence': item['base_score'],
+                'true_score': item['true_score']
+            })
+        
+        # Prepare validation data if provided
+        calibrator_validation_data = None
+        if validation_data:
+            calibrator_validation_data = []
+            for item in validation_data:
+                features = self.confidence_calibrator.extract_solution_features(
+                    item['code'], item['problem']
+                )
+                calibrator_validation_data.append({
+                    'features': features.squeeze(0),
+                    'base_confidence': item['base_score'],
+                    'true_score': item['true_score']
+                })
+        
+        # Train the calibrator
+        metrics = self.confidence_calibrator.train_calibration(
+            training_data=calibrator_training_data,
+            validation_data=calibrator_validation_data,
+            num_epochs=num_epochs,
+            learning_rate=learning_rate
+        )
+        
+        # Enable calibration after training
+        self.use_calibration = True
+        
+        logger.info(f"✅ STAR calibrator training complete. ECE: {metrics.get('ece', 0):.4f}")
+        return metrics
+    
+    def evaluate_calibration_quality(self, evaluation_data: List[Dict[str, Any]]) -> Dict[str, float]:
+        """
+        Evaluate the quality of confidence calibration.
+        
+        Args:
+            evaluation_data: List of {code, problem, base_score, true_score}
+        
+        Returns:
+            Calibration quality metrics
+        """
+        if not self.use_calibration or not self.confidence_calibrator.is_trained:
+            logger.warning("Calibrator not trained. Cannot evaluate calibration quality.")
+            return {'ece': 1.0, 'mce': 1.0, 'brier_score': 1.0}
+        
+        # Prepare evaluation data
+        calibrator_eval_data = []
+        for item in evaluation_data:
+            features = self.confidence_calibrator.extract_solution_features(
+                item['code'], item['problem']
+            )
+            calibrator_eval_data.append({
+                'features': features.squeeze(0),
+                'base_confidence': item['base_score'],
+                'true_score': item['true_score']
+            })
+        
+        # Evaluate calibration
+        metrics = self.confidence_calibrator.evaluate_calibration(calibrator_eval_data)
+        
+        logger.info(f"Calibration Quality - ECE: {metrics['ece']:.4f}, MCE: {metrics['mce']:.4f}, Brier: {metrics['brier_score']:.4f}")
+        return metrics
+    
+    def get_star_solution_ranking(self, solutions: List[Dict]) -> List[Dict]:
+        """
+        Rank solutions using STAR calibrated confidence scores.
+        
+        Args:
+            solutions: List of solution dictionaries
+        
+        Returns:
+            Solutions ranked by calibrated confidence
+        """
+        if not self.use_calibration or not self.confidence_calibrator.is_trained:
+            # Fall back to base heuristic ranking
+            return sorted(solutions, key=lambda x: x.get('score', 0), reverse=True)
+        
+        # Add calibrated scores to solutions
+        for solution in solutions:
+            if 'calibrated_score' not in solution:
+                # Re-score with calibration if not already done
+                calibrated_score = self.score_solution(
+                    solution.get('code', ''), 
+                    solution.get('problem', {})
+                )
+                solution['calibrated_score'] = calibrated_score
+        
+        # Rank by calibrated scores
+        ranked_solutions = sorted(solutions, key=lambda x: x.get('calibrated_score', x.get('score', 0)), reverse=True)
+        
+        logger.debug(f"STAR ranking complete. Top solution calibrated score: {ranked_solutions[0].get('calibrated_score', 0):.4f}")
+        return ranked_solutions
+    
+    def save_calibrator(self, path: str):
+        """Save the trained STAR calibrator."""
+        if self.confidence_calibrator.is_trained:
+            self.confidence_calibrator.save_calibrator(path)
+            logger.info(f"STAR calibrator saved to {path}")
+        else:
+            logger.warning("Calibrator not trained. Cannot save.")
+    
+    def load_calibrator(self, path: str):
+        """Load a trained STAR calibrator."""
+        try:
+            self.confidence_calibrator.load_calibrator(path)
+            self.use_calibration = True
+            logger.info(f"STAR calibrator loaded from {path}")
+        except Exception as e:
+            logger.error(f"Failed to load STAR calibrator: {e}")
+            self.use_calibration = False
+    
+    def get_calibration_summary(self) -> Dict[str, Any]:
+        """Get summary of STAR calibration state."""
+        return {
+            'use_calibration': self.use_calibration,
+            'calibrator_summary': self.confidence_calibrator.get_calibration_summary(),
+            'calibration_data_points': len(self.calibration_data)
+        }

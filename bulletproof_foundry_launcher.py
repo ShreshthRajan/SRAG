@@ -80,10 +80,11 @@ class BulletproofFoundryLauncher:
         
         # Check required files exist
         required_files = [
-            "run_step2_training.py",
+            "run_phase1_star_training.py",
             "bulletproof_training_launcher.py",
             "src/sragv/models/solution_generator.py",
-            "src/sragv/models/base_player.py"
+            "src/sragv/models/base_player.py",
+            "src/sragv/confidence_calibration.py"
         ]
         
         for file_path in required_files:
@@ -107,246 +108,111 @@ class BulletproofFoundryLauncher:
         return True
     
     def create_bulletproof_startup_script(self) -> str:
-        """Create bulletproof startup script with comprehensive monitoring."""
+        """Create compact startup script under 10k character limit."""
         
         startup_script = '''#!/bin/bash
-set -euo pipefail  # Fail fast on any error
+set -euo pipefail
 
-# Bulletproof logging function
-log_with_timestamp() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a /workspace/deployment.log
-}
+log_ts() { echo "$(date '+%H:%M:%S') - $1" | tee -a /workspace/deploy.log; }
+trap 'log_ts "EXIT CODE $?"' EXIT
 
-# Trap to log script exit
-trap 'log_with_timestamp "SCRIPT EXITING WITH CODE $?"' EXIT
+log_ts "🚀 PHASE 1 STAR DEPLOYMENT STARTING"
+cd /workspace && mkdir -p logs checkpoints monitoring artifacts phase1_results
 
-log_with_timestamp "🚀 BULLETPROOF SRAG-V DEPLOYMENT STARTING"
-log_with_timestamp "Hardware: $(lscpu | grep 'Model name' || echo 'CPU info unavailable')"
-log_with_timestamp "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader,nounits || echo 'GPU info unavailable')"
-log_with_timestamp "Memory: $(free -h | grep Mem || echo 'Memory info unavailable')"
+# Install dependencies
+log_ts "📦 Installing dependencies..."
+pip install torch>=2.0.0 transformers>=4.40.0 accelerate>=0.25.0 peft>=0.16.0 bitsandbytes>=0.41.0 datasets>=2.0.0 numpy>=1.24.0 pyyaml>=6.0 tqdm>=4.66.0 scikit-learn>=1.3.0 python-dotenv>=1.0.0 matplotlib>=3.5.0 seaborn>=0.11.0 --no-cache-dir --timeout=300
 
-# Create comprehensive directory structure
-log_with_timestamp "📁 Creating directory structure..."
-cd /workspace
-mkdir -p logs checkpoints monitoring artifacts srag-training
-
-# Enhanced error handling for pip installs
-install_with_retry() {
-    local package="$1"
-    local max_attempts=3
-    local attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        log_with_timestamp "📦 Installing $package (attempt $attempt/$max_attempts)"
-        if pip install "$package" --no-cache-dir --timeout=300; then
-            log_with_timestamp "✅ Successfully installed $package"
-            return 0
-        else
-            log_with_timestamp "⚠️ Failed to install $package (attempt $attempt)"
-            attempt=$((attempt + 1))
-            if [ $attempt -le $max_attempts ]; then
-                log_with_timestamp "⏱️ Waiting 30 seconds before retry..."
-                sleep 30
-            fi
-        fi
-    done
-    
-    log_with_timestamp "❌ CRITICAL: Failed to install $package after $max_attempts attempts"
-    return 1
-}
-
-# Install dependencies with bulletproof error handling
-log_with_timestamp "📦 Installing dependencies with bulletproof error handling..."
-
-# Core ML packages
-install_with_retry "torch>=2.0.0"
-install_with_retry "transformers>=4.40.0"
-install_with_retry "accelerate>=0.25.0"
-install_with_retry "peft>=0.16.0"
-install_with_retry "bitsandbytes>=0.41.0"
-
-# Data and utilities
-install_with_retry "datasets>=2.0.0"
-install_with_retry "numpy>=1.24.0"
-install_with_retry "pyyaml>=6.0"
-install_with_retry "tqdm>=4.66.0"
-install_with_retry "scikit-learn>=1.3.0"
-install_with_retry "python-dotenv>=1.0.0"
-
-log_with_timestamp "✅ All dependencies installed successfully"
-
-# Clone training code with error handling
-log_with_timestamp "📥 Cloning training repository..."
-if [ -d "srag-training/.git" ]; then
-    log_with_timestamp "📂 Repository exists, updating..."
-    cd srag-training
-    git pull origin main || {
-        log_with_timestamp "⚠️ Git pull failed, continuing with existing code"
-    }
-else
-    log_with_timestamp "📂 Cloning fresh repository..."
-    git clone https://github.com/ShreshthRajan/SRAG.git srag-training || {
-        log_with_timestamp "❌ CRITICAL: Failed to clone repository"
-        exit 1
-    }
-    cd srag-training
+# Clone repository
+log_ts "📥 Cloning repository..."
+if [ ! -d "srag-training" ]; then
+    git clone https://github.com/ShreshthRajan/SRAG.git srag-training || exit 1
 fi
+cd srag-training
 
-# Set bulletproof environment variables
-log_with_timestamp "🔧 Setting bulletproof environment..."
+# Environment setup
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=false
-export OMP_NUM_THREADS=8
-export CUDA_LAUNCH_BLOCKING=1  # Better error reporting
-export TORCH_USE_CUDA_DSA=1    # Device-side assertions
+export CUDA_LAUNCH_BLOCKING=1
 
-# Verify GPU availability
-log_with_timestamp "🔍 Verifying GPU setup..."
+# GPU health check with ECC detection
+log_ts "🔍 GPU Health Check..."
+nvidia-smi --query-gpu=ecc.errors.corrected.total,ecc.errors.uncorrected.total --format=csv,noheader,nounits > /tmp/ecc.txt 2>/dev/null || echo "0,0" > /tmp/ecc.txt
+while read -r c u; do
+    if [ "$c" != "0" ] || [ "$u" != "0" ]; then
+        log_ts "🚨 ECC ERRORS: Corrected=$c Uncorrected=$u - GPU may be unreliable!"
+    else
+        log_ts "✅ No ECC errors detected"
+    fi
+done < /tmp/ecc.txt
+
+# GPU stress test
 python3 -c "
-import torch
-print(f'PyTorch version: {torch.__version__}')
-print(f'CUDA available: {torch.cuda.is_available()}')
-if torch.cuda.is_available():
-    print(f'CUDA version: {torch.version.cuda}')
-    print(f'GPU count: {torch.cuda.device_count()}')
-    for i in range(torch.cuda.device_count()):
-        print(f'GPU {i}: {torch.cuda.get_device_name(i)}')
-        print(f'GPU {i} memory: {torch.cuda.get_device_properties(i).total_memory / 1e9:.1f} GB')
-else:
-    print('❌ CUDA not available!')
-" | tee -a /workspace/deployment.log
-
-# Create monitoring script for real-time visibility
-log_with_timestamp "📊 Creating real-time monitoring..."
-cat > /workspace/monitor_training.py << 'EOF'
-#!/usr/bin/env python3
-import os
-import time
-import psutil
-import subprocess
-from datetime import datetime
-
-def log_system_stats():
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # CPU and Memory
-    cpu_percent = psutil.cpu_percent(interval=1)
-    memory = psutil.virtual_memory()
-    
-    # GPU stats
+import torch, time
+if not torch.cuda.is_available(): exit(1)
+for i in range(torch.cuda.device_count()):
+    print('GPU {}: {}'.format(i, torch.cuda.get_device_name(i)))
     try:
-        gpu_result = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu', '--format=csv,noheader,nounits'], 
-                                  capture_output=True, text=True, timeout=10)
-        gpu_stats = gpu_result.stdout.strip()
-    except:
-        gpu_stats = "GPU stats unavailable"
-    
-    # Disk usage
-    disk = psutil.disk_usage('/workspace')
-    
-    # Training process check
-    training_running = False
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        try:
-            if 'python' in proc.info['name'] and 'run_step2_training' in ' '.join(proc.info['cmdline']):
-                training_running = True
-                break
-        except:
-            continue
-    
-    status = "🟢 RUNNING" if training_running else "🔴 NOT RUNNING"
-    
-    with open('/workspace/monitoring/system_stats.log', 'a') as f:
-        f.write(f"[{timestamp}] Training: {status} | CPU: {cpu_percent}% | RAM: {memory.percent}% | GPU: {gpu_stats} | Disk: {disk.percent}% used\\n")
-
-# Monitor every 30 seconds
-while True:
-    try:
-        log_system_stats()
-        time.sleep(30)
-    except KeyboardInterrupt:
-        break
+        for r in range(2):
+            a = torch.randn(1500, 1500, device='cuda:{}'.format(i))
+            b = torch.matmul(a, a.T).sum()
+            torch.cuda.synchronize()
+            print('  Test {}/2: PASSED ({:.1e})'.format(r+1, b.item()))
+            del a, b; torch.cuda.empty_cache(); time.sleep(0.5)
+        print('GPU {}: HEALTHY'.format(i))
     except Exception as e:
-        print(f"Monitoring error: {e}")
-        time.sleep(60)
+        print('GPU {}: FAILED - {}'.format(i, e)); exit(1)
+" || { log_ts "❌ GPU health check failed"; exit 1; }
+
+# Create monitoring
+cat > /workspace/monitor.py << 'EOF'
+import os, time, psutil, subprocess
+from datetime import datetime
+def log_stats():
+    ts = datetime.now().strftime('%H:%M:%S')
+    cpu = psutil.cpu_percent(interval=1)
+    mem = psutil.virtual_memory().percent
+    try:
+        gpu = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total', '--format=csv,noheader,nounits'], capture_output=True, text=True, timeout=5).stdout.strip()
+    except:
+        gpu = "N/A"
+    running = any('run_phase1_star_training' in ' '.join(p.info.get('cmdline', [])) for p in psutil.process_iter(['cmdline']) if p.info.get('cmdline'))
+    status = "🟢 RUNNING" if running else "🔴 NOT RUNNING"
+    with open('/workspace/monitoring/stats.log', 'a') as f:
+        f.write("[{}] {} | CPU:{}% | RAM:{}% | GPU:{}\n".format(ts, status, cpu, mem, gpu))
+while True:
+    try: log_stats(); time.sleep(30)
+    except: time.sleep(60)
 EOF
+nohup python3 /workspace/monitor.py > /workspace/monitoring/monitor.log 2>&1 &
 
-chmod +x /workspace/monitor_training.py
-
-# Start monitoring in background
-log_with_timestamp "🔄 Starting background monitoring..."
-nohup python3 /workspace/monitor_training.py > /workspace/monitoring/monitor.log 2>&1 &
-
-# Create Step 2 training dataset on VM
-log_with_timestamp "📁 Creating Step 2 training dataset..."
-if [ ! -f "data/expanded_apps.json" ]; then
-    log_with_timestamp "🔧 Creating 100-problem bootstrap dataset for Step 2..."
-    mkdir -p data
-    
-    # Use embedded Python script to create dataset (no f-strings)
-    python3 -c "
-import json
-import os
-
-problems = []
-for i in range(100):
-    problem_num = i + 1
-    problem = {
-        'problem_id': 'step2_train_{:03d}'.format(problem_num),
-        'question': 'Write a function that solves problem {}. This is training problem {} for Step 2 core training loop implementation.'.format(problem_num, problem_num),
-        'solutions': ['def solve_problem_{}(input_data):\\n    return input_data * 2'.format(problem_num)],
-        'starter_code': 'def solve_problem_{}(input_data):\\n    # Your code here\\n    pass'.format(problem_num),
-        'input_output': {
-            'inputs': [['1'], ['2'], ['3'], ['10'], ['100']],
-            'outputs': ['2', '4', '6', '20', '200']
-        },
-        'difficulty': 'interview' if i < 70 else 'competition',
-        'url': 'synthetic://step2_train_{:03d}'.format(problem_num),
-        'source': 'step2_training',
-        'test_case_count': 5
-    }
-    problems.append(problem)
-
+# Create dataset
+log_ts "📁 Creating training dataset..."
+mkdir -p data
+python3 -c "
+import json, os
+problems = [{'problem_id': 'phase1_{:03d}'.format(i), 'question': 'Solve problem {}'.format(i), 'solutions': ['def solve_{}(x): return x*2'.format(i)], 'input_output': {'inputs': [['1'],['2']], 'outputs': ['2','4']}} for i in range(100)]
 os.makedirs('data', exist_ok=True)
-with open('data/expanded_apps.json', 'w') as f:
-    json.dump(problems, f, indent=2)
-    
-print('Created {} problems for Step 2 training'.format(len(problems)))
+with open('data/expanded_apps.json', 'w') as f: json.dump(problems, f)
+print('Created {} problems'.format(len(problems)))
 "
-    log_with_timestamp "✅ Bootstrap dataset created: 100 problems for Step 2"
-else
-    log_with_timestamp "✅ Training dataset already exists"
-fi
 
-# Enhanced training execution with bulletproof error handling
-log_with_timestamp "🎯 STARTING BULLETPROOF TRAINING..."
-log_with_timestamp "Command: python3 run_step2_training.py 2>&1 | tee logs/training.log"
+# Run Phase 1 training
+log_ts "🎯 STARTING PHASE 1 STAR TRAINING..."
+exec > >(tee -a /workspace/logs/training_$(date +%Y%m%d_%H%M%S).log) 2>&1
 
-# Create training log with rotation
-exec > >(tee -a /workspace/logs/training_$(date +%Y%m%d_%H%M%S).log)
-exec 2>&1
-
-# Run training with comprehensive error handling
-if python3 run_step2_training.py; then
-    log_with_timestamp "🎉 TRAINING COMPLETED SUCCESSFULLY!"
+if python3 run_phase1_star_training.py; then
+    log_ts "🎉 PHASE 1 STAR TRAINING SUCCESS!"
     echo "SUCCESS" > /workspace/training_status.txt
 else
-    exit_code=$?
-    log_with_timestamp "❌ TRAINING FAILED WITH EXIT CODE: $exit_code"
-    echo "FAILED:$exit_code" > /workspace/training_status.txt
-    
-    # Collect failure artifacts
-    log_with_timestamp "📋 Collecting failure artifacts..."
-    mkdir -p /workspace/artifacts/failure_analysis
-    cp -r logs/* /workspace/artifacts/failure_analysis/ 2>/dev/null || true
-    cp -r checkpoints/* /workspace/artifacts/failure_analysis/ 2>/dev/null || true
-    nvidia-smi > /workspace/artifacts/failure_analysis/gpu_state.txt 2>/dev/null || true
-    ps aux > /workspace/artifacts/failure_analysis/processes.txt 2>/dev/null || true
-    
-    exit $exit_code
+    log_ts "❌ PHASE 1 TRAINING FAILED"
+    echo "FAILED:$?" > /workspace/training_status.txt
+    mkdir -p /workspace/artifacts
+    cp -r logs checkpoints phase1_results /workspace/artifacts/ 2>/dev/null || true
+    exit $?
 fi
 
-log_with_timestamp "🏁 BULLETPROOF DEPLOYMENT COMPLETE"
+log_ts "🏁 DEPLOYMENT COMPLETE"
 '''
         
         return startup_script.strip()
@@ -355,11 +221,11 @@ log_with_timestamp "🏁 BULLETPROOF DEPLOYMENT COMPLETE"
         """Deploy bulletproof training to ML Foundry."""
         logger.info("🚀 Deploying bulletproof training to ML Foundry...")
         
-        # Region configurations with fallbacks
+        # Region configurations - using yesterday's working regions
         region_configs = [
-            {"region": "eu-central1-b", "bid_price": 30.0},  # Known working region
-            {"region": "us-central1-a", "bid_price": 32.0},  # Fallback 1  
-            {"region": "us-central1-b", "bid_price": 32.0},  # Fallback 2
+            {"region": "us-central1-a", "bid_price": 32.0},  # Working region from yesterday
+            {"region": "us-central1-b", "bid_price": 32.0},  # Backup central region
+            {"region": "eu-central1-b", "bid_price": 33.0},  # European fallback
             {"bid_price": 35.0}  # Auto-region as last resort
         ]
         
@@ -374,7 +240,7 @@ log_with_timestamp "🏁 BULLETPROOF DEPLOYMENT COMPLETE"
             # Create spot bid payload (fixed API format)
             bid_payload = {
                 "project": self.project_id,
-                "name": f"sragv-bulletproof-{int(time.time())}",
+                "name": f"sragv-phase1-star-{int(time.time())}",
                 "limit_price": f"${bid_price:.2f}",
                 "instance_quantity": 1,
                 "instance_type": "it_fK7Cx6TVhOK5ZfXT",  # 4×A100 instance type (singular)
@@ -507,7 +373,7 @@ log_with_timestamp "🏁 BULLETPROOF DEPLOYMENT COMPLETE"
                             ssh_cmd = [
                                 "ssh", "-i", self.ssh_key_path, "-o", "StrictHostKeyChecking=no",
                                 "-o", "ConnectTimeout=10", f"ubuntu@{ip_address}",
-                                "pgrep -f 'python.*run_step2_training' > /dev/null && echo 'RUNNING' || echo 'NOT_RUNNING'"
+                                "pgrep -f 'python.*run_phase1_star_training' > /dev/null && echo 'RUNNING' || echo 'NOT_RUNNING'"
                             ]
                             
                             result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
@@ -555,8 +421,8 @@ log_with_timestamp "🏁 BULLETPROOF DEPLOYMENT COMPLETE"
         logger.info("✅ Deep monitoring started")
     
     def launch_bulletproof_training(self) -> bool:
-        """Main method to launch bulletproof training with full visibility."""
-        logger.info("🛡️ LAUNCHING BULLETPROOF SRAG-V TRAINING")
+        """Main method to launch bulletproof Phase 1 STAR training with full visibility."""
+        logger.info("🛡️ LAUNCHING BULLETPROOF SRAG-V PHASE 1 STAR TRAINING")
         logger.info("=" * 80)
         
         # Step 1: Validate prerequisites
@@ -579,14 +445,16 @@ log_with_timestamp "🏁 BULLETPROOF DEPLOYMENT COMPLETE"
         self.start_deep_monitoring(bid_id, ip_address)
         
         # Step 5: Provide connection instructions
-        logger.info("🎯 BULLETPROOF DEPLOYMENT COMPLETE!")
+        logger.info("🎯 BULLETPROOF PHASE 1 STAR DEPLOYMENT COMPLETE!")
         logger.info("=" * 80)
         logger.info(f"🆔 Bid ID: {bid_id}")
         logger.info(f"🌐 IP Address: {ip_address}")
         logger.info(f"🔑 SSH Command: ssh -i {self.ssh_key_path} ubuntu@{ip_address}")
         logger.info("📊 Deep monitoring is now running automatically")
-        logger.info("📋 Training logs: /workspace/logs/training_*.log")
+        logger.info("📋 Phase 1 Training logs: /workspace/logs/phase1_star_training_*.log")
         logger.info("📈 System monitoring: /workspace/monitoring/system_stats.log")
+        logger.info("🎯 Phase 1 Results: /workspace/phase1_results/")
+        logger.info("🧠 Expected: Enhanced confidence calibration with ECE < 0.1")
         logger.info("=" * 80)
         
         return True
