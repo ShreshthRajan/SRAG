@@ -25,8 +25,8 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 import numpy as np
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Add src to path (adjusted for new location)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 # Import with bulletproof error handling
 try:
@@ -271,9 +271,10 @@ def prepare_apps_dataset(config: Dict[str, Any]) -> tuple:
     logger.info("🌐 Downloading real coding datasets...")
     try:
         import subprocess
+        project_root = Path(__file__).parent.parent.parent
         result = subprocess.run([
-            sys.executable, "scripts/data_preparation/download_real_datasets.py"
-        ], capture_output=True, text=True, timeout=600)  # 10 min timeout
+            sys.executable, str(project_root / "scripts/data_preparation/download_real_datasets.py")
+        ], capture_output=True, text=True, timeout=600, cwd=str(project_root))  # 10 min timeout
         
         if result.returncode != 0:
             logger.warning(f"Dataset download had issues: {result.stderr}")
@@ -287,8 +288,8 @@ def prepare_apps_dataset(config: Dict[str, Any]) -> tuple:
     try:
         import subprocess
         result = subprocess.run([
-            sys.executable, "scripts/data_preparation/select_diverse_phase1_problems.py"
-        ], capture_output=True, text=True, timeout=300)  # 5 min timeout
+            sys.executable, str(project_root / "scripts/data_preparation/select_diverse_phase1_problems.py")
+        ], capture_output=True, text=True, timeout=300, cwd=str(project_root))  # 5 min timeout
         
         if result.returncode != 0:
             logger.warning(f"Problem selection had issues: {result.stderr}")
