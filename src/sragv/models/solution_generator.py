@@ -89,7 +89,9 @@ Your task is to generate syntactically correct and efficient Python code. Follow
 2. Use proper Python syntax with correct indentation (4 spaces)
 3. Include proper return statements
 4. Handle edge cases and validate inputs
-5. Write clean, readable code with meaningful variable names"""
+5. Write clean, readable code with meaningful variable names
+6. ALWAYS wrap your code in ```python and ``` tags
+7. Generate only the function implementation, no explanations outside code blocks"""
 
         # Create user message with few-shot examples for stability
         user_message = f"""Solve this coding problem by writing a Python function.
