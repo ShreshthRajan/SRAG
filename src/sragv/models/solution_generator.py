@@ -576,11 +576,11 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
             
             # Algorithmic patterns (up to 0.4)
             patterns = {
-                'recursion': ['return.*\w+\(', 'def.*\w+.*:.*\w+\('],
+                'recursion': [r'return.*\w+\(', r'def.*\w+.*:.*\w+\('],
                 'dynamic_programming': ['dp', 'memo', 'cache'],
                 'sorting': ['sort', 'sorted'],
-                'searching': ['binary.*search', 'bfs', 'dfs'],
-                'optimization': ['min(', 'max(', 'optimal']
+                'searching': [r'binary.*search', 'bfs', 'dfs'],
+                'optimization': [r'min\(', r'max\(', 'optimal']
             }
             
             pattern_score = 0.0
@@ -710,10 +710,10 @@ Now solve the problem above. Write ONLY the Python function, ensure perfect synt
             
             # Check for common edge case patterns
             edge_patterns = [
-                ('empty_check', ['if not', 'if len(', '== 0', '== []', "== ''"]),
-                ('null_check', ['is none', 'if.*none', 'not.*none']),
+                ('empty_check', ['if not', r'if len\(', '== 0', '== []', "== ''"]),
+                ('null_check', ['is none', r'if.*none', r'not.*none']),
                 ('boundary_check', ['<= 0', '>= ', '< 1', '> 0']),
-                ('type_validation', ['isinstance', 'type(']),
+                ('type_validation', ['isinstance', r'type\(']),
                 ('exception_handling', ['try:', 'except', 'finally:']),
             ]
             

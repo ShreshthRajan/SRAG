@@ -118,23 +118,32 @@ class DiverseProblemSelector:
         
         logger.info(f"Problems by difficulty: Easy={len(easy_problems)}, Medium={len(medium_problems)}, Hard={len(hard_problems)}")
         
-        # Target distribution for diversity
+        # Target distribution for diversity - FIXED EXACT COUNTS
         target_distribution = {
-            'easy': max(50, int(0.4 * target_count)),      # 40% easy
-            'medium': max(100, int(0.5 * target_count)),   # 50% medium  
-            'hard': max(20, int(0.1 * target_count))       # 10% hard
+            'easy': 80,      # Exactly 80 easy (40%)
+            'medium': 100,   # Exactly 100 medium (50%)  
+            'hard': 20       # Exactly 20 hard (10%)
         }
         
-        # Adjust if we don't have enough in each category
-        if len(medium_problems) < target_distribution['medium']:
-            target_distribution['easy'] += target_distribution['medium'] - len(medium_problems)
-            target_distribution['medium'] = len(medium_problems)
-            
-        if len(hard_problems) < target_distribution['hard']:
-            target_distribution['medium'] += target_distribution['hard'] - len(hard_problems)
-            target_distribution['hard'] = len(hard_problems)
+        logger.info(f"REQUIRED EXACT distribution: {target_distribution}")
+        logger.info(f"Available problems: Easy={len(easy_problems)}, Medium={len(medium_problems)}, Hard={len(hard_problems)}")
         
-        logger.info(f"Target distribution: {target_distribution}")
+        # Enforce minimum requirements - fail if we don't have enough
+        missing_categories = []
+        if len(easy_problems) < target_distribution['easy']:
+            missing_categories.append(f"easy (need {target_distribution['easy']}, have {len(easy_problems)})")
+        if len(medium_problems) < target_distribution['medium']:
+            missing_categories.append(f"medium (need {target_distribution['medium']}, have {len(medium_problems)})")
+        if len(hard_problems) < target_distribution['hard']:
+            missing_categories.append(f"hard (need {target_distribution['hard']}, have {len(hard_problems)})")
+        
+        if missing_categories:
+            logger.error(f"INSUFFICIENT PROBLEMS in categories: {missing_categories}")
+            logger.error("This will compromise data quality. Aborting selection.")
+            raise ValueError(f"Insufficient problems in categories: {missing_categories}")
+        
+        logger.info(f"✅ Sufficient problems available for target distribution")
+        logger.info(f"Final target distribution: {target_distribution}")
         
         selected_problems = []
         
@@ -250,14 +259,42 @@ class DiverseProblemSelector:
     
     def _analyze_selection_quality(self, selected_problems: List[Dict[str, Any]]):
         """Analyze and report the quality of problem selection."""
-        logger.info("=== SELECTION QUALITY ANALYSIS ===")
+        logger.info("=" * 80)
+        logger.info("🔍 COMPREHENSIVE SELECTION QUALITY ANALYSIS")
+        logger.info("=" * 80)
         
-        # Difficulty distribution
+        # CRITICAL: Difficulty distribution validation
         difficulties = {}
         for prob in selected_problems:
             diff = prob.get('difficulty', 'unknown')
             difficulties[diff] = difficulties.get(diff, 0) + 1
-        logger.info(f"Difficulty distribution: {difficulties}")
+        
+        logger.info(f"📊 FINAL DIFFICULTY DISTRIBUTION:")
+        logger.info(f"   Easy: {difficulties.get('easy', 0)} problems (target: 80)")
+        logger.info(f"   Medium: {difficulties.get('medium', 0)} problems (target: 100)")  
+        logger.info(f"   Hard: {difficulties.get('hard', 0)} problems (target: 20)")
+        logger.info(f"   Total: {sum(difficulties.values())} problems (target: 200)")
+        
+        # VALIDATION: Check if we hit targets
+        target_validation = {
+            'easy': (difficulties.get('easy', 0), 80),
+            'medium': (difficulties.get('medium', 0), 100),
+            'hard': (difficulties.get('hard', 0), 20)
+        }
+        
+        validation_passed = True
+        for diff, (actual, target) in target_validation.items():
+            if actual != target:
+                logger.error(f"❌ {diff.upper()} MISMATCH: got {actual}, expected {target}")
+                validation_passed = False
+            else:
+                logger.info(f"✅ {diff.upper()} TARGET MET: {actual}/{target}")
+        
+        if validation_passed:
+            logger.info("🎉 ALL DIFFICULTY TARGETS SUCCESSFULLY MET!")
+        else:
+            logger.error("💥 DIFFICULTY TARGETS NOT MET - DATA QUALITY COMPROMISED")
+            raise ValueError("Selection failed to meet difficulty distribution targets")
         
         # Algorithm type distribution  
         type_counts = {}
@@ -265,18 +302,22 @@ class DiverseProblemSelector:
             types = self.analyze_problem_type(prob)
             dominant_type = max(types.keys(), key=lambda k: types[k]) if types else 'unknown'
             type_counts[dominant_type] = type_counts.get(dominant_type, 0) + 1
-        logger.info(f"Algorithm type distribution: {type_counts}")
+        logger.info(f"🧮 Algorithm type distribution: {type_counts}")
         
         # Complexity analysis
         complexities = [self.assess_problem_complexity(p) for p in selected_problems]
-        logger.info(f"Complexity stats: mean={np.mean(complexities):.3f}, std={np.std(complexities):.3f}")
+        logger.info(f"📈 Complexity stats: mean={np.mean(complexities):.3f}, std={np.std(complexities):.3f}")
         
         # Source distribution
         sources = {}
         for prob in selected_problems:
             source = prob.get('source', 'unknown')
             sources[source] = sources.get(source, 0) + 1
-        logger.info(f"Source distribution: {sources}")
+        logger.info(f"🔗 Source distribution: {sources}")
+        
+        logger.info("=" * 80)
+        logger.info("✅ SELECTION QUALITY ANALYSIS COMPLETE")
+        logger.info("=" * 80)
 
 def main():
     """Main selection process."""
