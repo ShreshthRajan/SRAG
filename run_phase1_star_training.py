@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-BULLETPROOF SRAG-V Phase 1: STAR Confidence Calibration Training
-Enhanced confidence calibration with temperature scaling for breakthrough AI training.
+PHASE 1 REDO: STAR Confidence Calibration with Real Diverse Datasets
+Enhanced confidence calibration with real HumanEval/MBPP problems and confidence collapse prevention.
 
-This script implements Phase 1 of STAR (Strategic Training with Active Reinforcement):
-- Prepare 2000 APPS problems with ground truth labels
-- Generate solutions for calibration training  
-- Train enhanced confidence calibrator with temperature scaling
-- Validate calibration quality with ECE < 0.1 target
+This script implements Phase 1 REDO of STAR (Strategic Training with Active Reinforcement):
+- Use real diverse coding problems (HumanEval + MBPP + synthetic medium)
+- Strategic selection of 200 diverse problems across difficulty levels
+- Generate solutions with enhanced confidence scoring (prevents collapse)
+- Train enhanced confidence calibrator with proper variance
+- Validate calibration quality with ECE < 0.05 target and confidence diversity
 """
 
 import logging
@@ -262,51 +263,95 @@ def create_phase1_config() -> Dict[str, Any]:
     return config
 
 def prepare_apps_dataset(config: Dict[str, Any]) -> tuple:
-    """Prepare APPS dataset for Phase 1 training."""
-    logger.info(f"📊 Preparing {config['apps_problems_count']} APPS problems...")
-    training_state["current_phase"] = "data_preparation"
+    """Prepare diverse real dataset for Phase 1 REDO training."""
+    logger.info(f"📊 PHASE 1 REDO: Preparing diverse real coding problems...")
+    training_state["current_phase"] = "diverse_data_preparation"
     
-    # Try to load real APPS data first
+    # Step 1: Download real datasets
+    logger.info("🌐 Downloading real coding datasets...")
     try:
-        data_loader = APPSDataLoader(
-            cache_dir="./data",
-            max_problems=config['apps_problems_count']
-        )
-        problems, categorized = data_loader.prepare_bootstrap_data()
-        logger.info(f"✅ Loaded {len(problems)} real APPS problems")
+        import subprocess
+        result = subprocess.run([
+            sys.executable, "download_real_datasets.py"
+        ], capture_output=True, text=True, timeout=600)  # 10 min timeout
         
+        if result.returncode != 0:
+            logger.warning(f"Dataset download had issues: {result.stderr}")
+        else:
+            logger.info("✅ Real datasets downloaded successfully")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to load real APPS data: {e}")
-        logger.info("Falling back to synthetic data...")
+        logger.warning(f"Could not run dataset download: {e}")
+    
+    # Step 2: Strategic selection of diverse problems
+    logger.info("🎯 Strategic selection of diverse problems...")
+    try:
+        import subprocess
+        result = subprocess.run([
+            sys.executable, "select_diverse_phase1_problems.py"
+        ], capture_output=True, text=True, timeout=300)  # 5 min timeout
         
-        # Fall back to simple data loader
+        if result.returncode != 0:
+            logger.warning(f"Problem selection had issues: {result.stderr}")
+        else:
+            logger.info("✅ Diverse problems selected successfully")
+    except Exception as e:
+        logger.warning(f"Could not run problem selection: {e}")
+    
+    # Step 3: Load selected diverse problems
+    diverse_problems_path = Path("data/phase1_diverse_problems.json")
+    if diverse_problems_path.exists():
+        with open(diverse_problems_path, 'r') as f:
+            problems = json.load(f)
+        logger.info(f"✅ Loaded {len(problems)} strategically selected diverse problems")
+        
+        # Analyze diversity
+        difficulties = {}
+        sources = {}
+        for prob in problems:
+            diff = prob.get('difficulty', 'unknown')
+            source = prob.get('source', 'unknown')
+            difficulties[diff] = difficulties.get(diff, 0) + 1
+            sources[source] = sources.get(source, 0) + 1
+        
+        logger.info(f"📊 Difficulty distribution: {difficulties}")
+        logger.info(f"📊 Source distribution: {sources}")
+        
+        # Create categorized dict for compatibility
+        categorized = {'diverse_real': problems}
+        
+    else:
+        logger.warning("⚠️ Diverse problems file not found, falling back to synthetic")
+        # Fallback to synthetic problem generation
         simple_loader = SimpleAPPSDataLoader(
             cache_dir="./data",
-            max_problems=min(500, config['apps_problems_count'])  # Limit synthetic data
+            max_problems=min(200, config['apps_problems_count'])
         )
         problems, categorized = simple_loader.prepare_bootstrap_data()
-        logger.info(f"✅ Generated {len(problems)} synthetic problems")
+        logger.info(f"✅ Generated {len(problems)} synthetic fallback problems")
     
-    # Split into train/validation
+    # Split into train/validation (80/20 split)
     split_idx = int(len(problems) * config['train_split'])
     train_problems = problems[:split_idx]
     val_problems = problems[split_idx:]
     
-    logger.info(f"Dataset split: {len(train_problems)} train, {len(val_problems)} validation")
+    logger.info(f"📈 PHASE 1 REDO Dataset: {len(train_problems)} training, {len(val_problems)} validation")
+    logger.info(f"🎯 Enhanced confidence scoring enabled to prevent collapse")
     
     # Save dataset for reproducibility
     dataset_info = {
+        'phase': '1_REDO',
         'total_problems': len(problems),
         'train_problems': len(train_problems),
         'val_problems': len(val_problems),
         'categorized_counts': {k: len(v) for k, v in categorized.items()} if categorized else {},
+        'confidence_collapse_prevention': 'enabled',
         'timestamp': datetime.now().isoformat()
     }
     
-    with open('phase1_results/dataset_info.json', 'w') as f:
+    with open('phase1_results/phase1_redo_dataset_info.json', 'w') as f:
         json.dump(dataset_info, f, indent=2)
     
-    logger.info("✅ APPS dataset preparation complete")
+    logger.info("✅ PHASE 1 REDO dataset preparation complete")
     return train_problems, val_problems
 
 def generate_calibration_solutions(

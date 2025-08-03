@@ -13,16 +13,25 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Any
 
+# Setup logging first
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from sragv.strategic_oracle import StrategicOracle
-from sragv.confidence_calibration import EnhancedConfidenceCalibrator
-from sragv.models.verification_generator import TestQualityPredictor
-
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Direct imports to avoid orchestrator dependency chain
+try:
+    from sragv.strategic_oracle import StrategicOracle
+    from sragv.confidence_calibration import EnhancedConfidenceCalibrator
+    from sragv.models.verification_generator import TestQualityPredictor
+except ImportError as e:
+    logger.error(f"Import error: {e}")
+    # Try alternative import path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from src.sragv.strategic_oracle import StrategicOracle
+    from src.sragv.confidence_calibration import EnhancedConfidenceCalibrator
+    from src.sragv.models.verification_generator import TestQualityPredictor
 
 
 def test_strategic_oracle_integration():
@@ -32,11 +41,11 @@ def test_strategic_oracle_integration():
     logger.info("=" * 80)
     
     try:
-        # Load Phase 1 enhanced solutions
-        phase1_solutions_path = "phase1_results/solution_data_enhanced.json"
+        # Load Phase 1 solutions
+        phase1_solutions_path = "phase1_results/solution_data.json"
         if not Path(phase1_solutions_path).exists():
-            logger.error(f"Phase 1 enhanced solutions not found: {phase1_solutions_path}")
-            logger.info("Run Phase 1 confidence diversity fix first!")
+            logger.error(f"Phase 1 solutions not found: {phase1_solutions_path}")
+            logger.info("Run Phase 1 training first!")
             return False
         
         with open(phase1_solutions_path, 'r') as f:
@@ -56,8 +65,8 @@ def test_strategic_oracle_integration():
             solution_history.append({
                 'problem_id': problem.get('problem_id', 'unknown'),
                 'code': solution.get('code', ''),
-                'score': solution.get('enhanced_score', 0.5),
-                'original_score': solution.get('original_score', 0.8)
+                'score': solution.get('true_score', solution.get('base_score', 0.5)),
+                'base_score': solution.get('base_score', 0.8)
             })
         
         logger.info(f"📊 Extracted {len(problems)} unique problems")
@@ -73,11 +82,11 @@ def test_strategic_oracle_integration():
         )
         
         # Load existing calibrator if available
-        calibrator_path = "checkpoints/phase1_star_calibrator_enhanced.pt"
+        calibrator_path = "checkpoints/phase1_star_calibrator_success.pt"
         if Path(calibrator_path).exists():
             try:
                 calibrator.load_calibrator(calibrator_path)
-                logger.info("✅ Loaded Phase 1 enhanced calibrator")
+                logger.info("✅ Loaded Phase 1 calibrator")
             except Exception as e:
                 logger.warning(f"Could not load calibrator: {e}")
         
@@ -222,9 +231,10 @@ def validate_phase2_requirements():
     logger.info("-" * 40)
     
     requirements = {
-        'phase1_enhanced_solutions': 'phase1_results/solution_data_enhanced.json',
-        'phase1_calibrator': 'checkpoints/phase1_star_calibrator_enhanced.pt',
-        'confidence_diversity_summary': 'phase1_results/direct_confidence_summary.json'
+        'phase1_solutions': 'phase1_results/solution_data.json',
+        'phase1_calibrator': 'checkpoints/phase1_star_calibrator_success.pt',
+        'phase1_final_report': 'phase1_results/phase1_final_report.json',
+        'phase1_star_results': 'phase1_results/phase1_star_results.json'
     }
     
     all_requirements_met = True

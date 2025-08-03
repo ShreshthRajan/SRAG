@@ -148,14 +148,18 @@ class TestQualityPredictor:
             return 0.2
     
     def _assess_discriminative_power(self, test_cases: List[Dict], solutions: List[Dict]) -> float:
-        """Assess how well test cases can discriminate between correct/incorrect solutions."""
+        """
+        Enhanced discriminative power assessment using solution analysis.
+        STAR Phase 2: More sophisticated ML-based approach.
+        """
         
         if not solutions or len(solutions) < 2:
             return 0.5  # Can't assess without multiple solutions
         
-        # Simple heuristic: more diverse test cases have better discriminative power
+        # 1. Input diversity analysis (enhanced)
         input_types = set()
         input_sizes = set()
+        input_complexities = []
         
         for test_case in test_cases:
             test_input = test_case.get('input')
@@ -163,14 +167,80 @@ class TestQualityPredictor:
             
             if hasattr(test_input, '__len__'):
                 input_sizes.add(len(test_input))
+                # Complexity based on nested structure
+                complexity = self._compute_input_complexity(test_input)
+                input_complexities.append(complexity)
             else:
                 input_sizes.add(1)
+                input_complexities.append(0.1)  # Simple input
         
-        # Score based on diversity
-        type_diversity = len(input_types) / 3.0  # Expect up to 3 different types
-        size_diversity = min(1.0, len(input_sizes) / 5.0)  # Expect up to 5 different sizes
+        # 2. Solution diversity analysis
+        solution_lengths = [len(s.get('code', '')) for s in solutions]
+        solution_approaches = set()
         
-        return (type_diversity + size_diversity) / 2.0
+        for solution in solutions:
+            code = solution.get('code', '')
+            # Identify algorithmic approach
+            if any(keyword in code.lower() for keyword in ['sort', 'sorted']):
+                solution_approaches.add('sorting')
+            if any(keyword in code.lower() for keyword in ['dict', 'hash', 'map']):
+                solution_approaches.add('hashing')
+            if any(keyword in code.lower() for keyword in ['for', 'while']):
+                solution_approaches.add('iterative')
+            if any(keyword in code.lower() for keyword in ['recursive', 'return']):
+                solution_approaches.add('recursive')
+        
+        # 3. Enhanced discriminative scoring
+        type_diversity = min(1.0, len(input_types) / 3.0)
+        size_diversity = min(1.0, len(input_sizes) / 5.0)
+        complexity_diversity = (max(input_complexities) - min(input_complexities)) if input_complexities else 0
+        approach_diversity = min(1.0, len(solution_approaches) / 4.0)
+        
+        # Weighted combination
+        discriminative_score = (
+            type_diversity * 0.25 +
+            size_diversity * 0.25 +
+            complexity_diversity * 0.25 +
+            approach_diversity * 0.25
+        )
+        
+        return discriminative_score
+    
+    def _compute_input_complexity(self, test_input) -> float:
+        """Compute complexity score for test input."""
+        try:
+            if isinstance(test_input, (list, tuple)):
+                if not test_input:
+                    return 0.1  # Empty is simple but important
+                
+                # Nested structure complexity
+                max_depth = self._get_nested_depth(test_input)
+                length_complexity = min(1.0, len(test_input) / 10.0)  # Normalize by typical size
+                
+                return (max_depth * 0.6 + length_complexity * 0.4) / 2.0
+                
+            elif isinstance(test_input, dict):
+                return min(1.0, len(test_input) / 5.0) * 0.8  # Dictionaries are complex
+            elif isinstance(test_input, str):
+                return min(1.0, len(test_input) / 20.0) * 0.6  # String complexity
+            else:
+                return 0.3  # Simple primitive
+                
+        except Exception:
+            return 0.5  # Default complexity
+    
+    def _get_nested_depth(self, obj, current_depth=0) -> int:
+        """Get maximum nesting depth of a data structure."""
+        if isinstance(obj, (list, tuple)):
+            if not obj:
+                return current_depth
+            return max(self._get_nested_depth(item, current_depth + 1) for item in obj)
+        elif isinstance(obj, dict):
+            if not obj:
+                return current_depth
+            return max(self._get_nested_depth(value, current_depth + 1) for value in obj.values())
+        else:
+            return current_depth
     
     def _assess_execution_reliability(self, test_cases: List[Dict]) -> float:
         """Assess the reliability and executability of test cases."""

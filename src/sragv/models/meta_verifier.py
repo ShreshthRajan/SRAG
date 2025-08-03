@@ -49,6 +49,11 @@ class MetaVerifier(BasePlayer):
             "ambiguous"          # Unclear expected behavior
         ]
         
+        # STAR Phase 2 Enhancement: Strategic feedback capability
+        self.strategic_feedback_enabled = True
+        self.verification_confidence_history = []
+        self.problem_difficulty_estimates = {}
+        
         # Quality criteria for test validation
         self.quality_criteria = {
             "deterministic": "Test produces consistent results across runs",
@@ -440,6 +445,13 @@ Validate all {len(test_cases)} test cases and respond with the exact JSON format
             logger.warning("Failed to generate validations after all attempts, using intelligent fallback")
             validations = self.create_intelligent_fallback_validations(test_cases, solutions)
         
+        # STAR Phase 2 Enhancement: Extract strategic feedback during validation
+        strategic_feedback = {}
+        if self.strategic_feedback_enabled:
+            strategic_feedback = self._extract_strategic_feedback(
+                problem, solutions, test_cases, validations
+            )
+        
         # Combine test cases with their validations
         validated_test_cases = []
         for i, test_case in enumerate(test_cases):
@@ -478,6 +490,13 @@ Validate all {len(test_cases)} test cases and respond with the exact JSON format
         
         logger.info(f"✅ Validation complete: {valid_count}/{len(test_cases)} valid, avg confidence: {avg_confidence:.3f}")
         logger.debug(f"Validation methods used: {method_counts}")
+        
+        # STAR Phase 2: Add strategic feedback to results
+        if strategic_feedback:
+            return {
+                'validated_test_cases': validated_test_cases,
+                'strategic_feedback': strategic_feedback
+            }
         
         return validated_test_cases
     
@@ -681,3 +700,108 @@ Validate all {len(test_cases)} test cases and respond with the exact JSON format
         except Exception as e:
             logger.warning(f"Error computing meta score: {e}")
             return 0.5
+    
+    def _extract_strategic_feedback(
+        self, 
+        problem: Dict[str, Any], 
+        solutions: List[Dict], 
+        test_cases: List[Dict], 
+        validations: List[Dict]
+    ) -> Dict[str, Any]:
+        """
+        STAR Phase 2: Extract strategic feedback from validation process.
+        Provides information for Strategic Oracle to improve problem selection.
+        """
+        try:
+            problem_id = problem.get('problem_id', 'unknown')
+            
+            # 1. Validation confidence assessment
+            validation_scores = [v.get('confidence', 0.5) for v in validations if isinstance(v, dict)]
+            avg_validation_confidence = sum(validation_scores) / len(validation_scores) if validation_scores else 0.5
+            validation_consistency = 1.0 - (max(validation_scores) - min(validation_scores)) if len(validation_scores) > 1 else 1.0
+            
+            # 2. Problem difficulty estimation from validation patterns
+            invalid_test_ratio = sum(1 for v in validations if not v.get('is_valid', True)) / len(validations) if validations else 0
+            difficulty_from_invalidity = min(1.0, invalid_test_ratio * 2.0)  # High invalidity suggests difficult problem
+            
+            # 3. Test quality assessment
+            test_quality_indicators = {
+                'has_edge_cases': any('empty' in str(tc).lower() or '[]' in str(tc) for tc in test_cases),
+                'has_boundary_values': any(any(indicator in str(tc).lower() for indicator in ['max', 'min', 'limit']) for tc in test_cases),
+                'input_diversity': len(set(str(tc.get('input', '')) for tc in test_cases)) / len(test_cases) if test_cases else 0
+            }
+            test_quality_score = sum(test_quality_indicators.values()) / len(test_quality_indicators)
+            
+            # 4. Learning signal strength
+            clear_validations = sum(1 for v in validations if v.get('confidence', 0) > 0.7 or v.get('confidence', 0) < 0.3)
+            learning_signal_strength = clear_validations / len(validations) if validations else 0
+            
+            # 5. Strategic recommendations
+            recommendations = []
+            if avg_validation_confidence < 0.5:
+                recommendations.append("improve_test_quality")
+            if difficulty_from_invalidity > 0.6:
+                recommendations.append("focus_on_this_difficulty_level")
+            if test_quality_score < 0.4:
+                recommendations.append("generate_better_edge_cases")
+            if learning_signal_strength > 0.7:
+                recommendations.append("good_learning_signal")
+            
+            # Cache problem difficulty estimate
+            combined_difficulty = (difficulty_from_invalidity + (1.0 - avg_validation_confidence)) / 2.0
+            self.problem_difficulty_estimates[problem_id] = combined_difficulty
+            
+            # Record in history
+            feedback_record = {
+                'problem_id': problem_id,
+                'validation_confidence': avg_validation_confidence,
+                'problem_difficulty': combined_difficulty,
+                'test_quality': test_quality_score,
+                'learning_signal': learning_signal_strength
+            }
+            self.verification_confidence_history.append(feedback_record)
+            
+            return {
+                'validation_confidence': avg_validation_confidence,
+                'validation_consistency': validation_consistency,
+                'problem_difficulty_estimate': combined_difficulty,
+                'test_quality_score': test_quality_score,
+                'learning_signal_strength': learning_signal_strength,
+                'strategic_recommendations': recommendations,
+                'oracle_feedback': {
+                    'increase_uncertainty_weight': combined_difficulty > 0.7,
+                    'increase_quality_weight': test_quality_score < 0.4,
+                    'problem_is_good_candidate': learning_signal_strength > 0.6 and test_quality_score > 0.5
+                }
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting strategic feedback: {e}")
+            return {
+                'validation_confidence': 0.5,
+                'problem_difficulty_estimate': 0.5,
+                'test_quality_score': 0.5,
+                'learning_signal_strength': 0.5,
+                'strategic_recommendations': [],
+                'oracle_feedback': {}
+            }
+    
+    def get_strategic_analytics(self) -> Dict[str, Any]:
+        """Get strategic analytics from verification history for oracle feedback."""
+        if not self.verification_confidence_history:
+            return {'total_verifications': 0}
+        
+        recent_verifications = self.verification_confidence_history[-20:]  # Last 20
+        
+        return {
+            'total_verifications': len(self.verification_confidence_history),
+            'recent_avg_confidence': sum(v['validation_confidence'] for v in recent_verifications) / len(recent_verifications),
+            'recent_avg_difficulty': sum(v['problem_difficulty'] for v in recent_verifications) / len(recent_verifications),
+            'recent_avg_test_quality': sum(v['test_quality'] for v in recent_verifications) / len(recent_verifications),
+            'cached_difficulty_estimates': len(self.problem_difficulty_estimates),
+            'strategic_recommendations_count': {
+                'improve_test_quality': sum(1 for v in recent_verifications if 'improve_test_quality' in str(v)),
+                'focus_on_difficulty': sum(1 for v in recent_verifications if 'focus_on_this_difficulty_level' in str(v)),
+                'good_learning_signal': sum(1 for v in recent_verifications if 'good_learning_signal' in str(v))
+            }
+        }
