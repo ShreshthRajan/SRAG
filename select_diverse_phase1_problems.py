@@ -118,11 +118,11 @@ class DiverseProblemSelector:
         
         logger.info(f"Problems by difficulty: Easy={len(easy_problems)}, Medium={len(medium_problems)}, Hard={len(hard_problems)}")
         
-        # Target distribution for diversity - FIXED EXACT COUNTS
+        # Target distribution for diversity - REALISTIC EXACT COUNTS
         target_distribution = {
-            'easy': 80,      # Exactly 80 easy (40%)
-            'medium': 100,   # Exactly 100 medium (50%)  
-            'hard': 20       # Exactly 20 hard (10%)
+            'easy': 54,      # Exactly 54 easy (27%)
+            'medium': 91,    # Exactly 91 medium (45.5%) - use all available
+            'hard': 55       # Exactly 55 hard (27.5%)
         }
         
         logger.info(f"REQUIRED EXACT distribution: {target_distribution}")
@@ -270,16 +270,16 @@ class DiverseProblemSelector:
             difficulties[diff] = difficulties.get(diff, 0) + 1
         
         logger.info(f"📊 FINAL DIFFICULTY DISTRIBUTION:")
-        logger.info(f"   Easy: {difficulties.get('easy', 0)} problems (target: 80)")
-        logger.info(f"   Medium: {difficulties.get('medium', 0)} problems (target: 100)")  
-        logger.info(f"   Hard: {difficulties.get('hard', 0)} problems (target: 20)")
+        logger.info(f"   Easy: {difficulties.get('easy', 0)} problems (target: 54)")
+        logger.info(f"   Medium: {difficulties.get('medium', 0)} problems (target: 91)")  
+        logger.info(f"   Hard: {difficulties.get('hard', 0)} problems (target: 55)")
         logger.info(f"   Total: {sum(difficulties.values())} problems (target: 200)")
         
         # VALIDATION: Check if we hit targets
         target_validation = {
-            'easy': (difficulties.get('easy', 0), 80),
-            'medium': (difficulties.get('medium', 0), 100),
-            'hard': (difficulties.get('hard', 0), 20)
+            'easy': (difficulties.get('easy', 0), 54),
+            'medium': (difficulties.get('medium', 0), 91),
+            'hard': (difficulties.get('hard', 0), 55)
         }
         
         validation_passed = True
