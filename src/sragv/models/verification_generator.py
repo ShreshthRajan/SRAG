@@ -16,6 +16,212 @@ from .base_player import BasePlayer
 logger = logging.getLogger(__name__)
 
 
+class TestQualityPredictor:
+    """
+    STAR Phase 2 Enhancement: Test Quality Prediction
+    
+    Predicts the quality and reliability of generated test cases
+    to support strategic problem selection in the oracle.
+    """
+    
+    def __init__(self):
+        self.quality_factors = {
+            'coverage_completeness': 0.25,
+            'edge_case_detection': 0.25, 
+            'discriminative_power': 0.20,
+            'execution_reliability': 0.15,
+            'input_diversity': 0.15
+        }
+    
+    def predict_test_quality(
+        self, 
+        test_cases: List[Dict], 
+        problem: Dict[str, Any],
+        solutions: List[Dict] = None
+    ) -> Dict[str, float]:
+        """
+        Predict overall quality score for generated test cases.
+        Higher scores indicate better test suites for strategic learning.
+        """
+        try:
+            if not test_cases:
+                return {'overall_quality': 0.0, 'confidence': 0.0}
+            
+            # Compute quality dimensions
+            coverage_score = self._assess_coverage_completeness(test_cases, problem)
+            edge_case_score = self._assess_edge_case_detection(test_cases, problem)
+            discriminative_score = self._assess_discriminative_power(test_cases, solutions)
+            reliability_score = self._assess_execution_reliability(test_cases)
+            diversity_score = self._assess_input_diversity(test_cases)
+            
+            # Weighted combination
+            overall_quality = (
+                self.quality_factors['coverage_completeness'] * coverage_score +
+                self.quality_factors['edge_case_detection'] * edge_case_score +
+                self.quality_factors['discriminative_power'] * discriminative_score +
+                self.quality_factors['execution_reliability'] * reliability_score +
+                self.quality_factors['input_diversity'] * diversity_score
+            )
+            
+            # Confidence based on number of test cases and consistency
+            confidence = min(1.0, len(test_cases) / 8.0 * 0.8 + 0.2)
+            
+            return {
+                'overall_quality': overall_quality,
+                'confidence': confidence,
+                'coverage_completeness': coverage_score,
+                'edge_case_detection': edge_case_score,
+                'discriminative_power': discriminative_score,
+                'execution_reliability': reliability_score,
+                'input_diversity': diversity_score
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error predicting test quality: {e}")
+            return {'overall_quality': 0.5, 'confidence': 0.0}
+    
+    def _assess_coverage_completeness(self, test_cases: List[Dict], problem: Dict) -> float:
+        """Assess how well test cases cover the problem requirements."""
+        
+        problem_text = problem.get('question', '').lower()
+        
+        # Check for basic coverage categories
+        coverage_categories = {
+            'normal_cases': False,
+            'empty_input': False,
+            'single_element': False,
+            'multiple_elements': False,
+            'boundary_values': False
+        }
+        
+        for test_case in test_cases:
+            test_input = test_case.get('input', '')
+            test_str = str(test_input).lower()
+            
+            # Detect coverage patterns
+            if 'empty' in test_str or '[]' in test_str or len(str(test_input)) == 0:
+                coverage_categories['empty_input'] = True
+            elif isinstance(test_input, (list, str)) and len(test_input) == 1:
+                coverage_categories['single_element'] = True
+            elif isinstance(test_input, (list, str)) and len(test_input) > 1:
+                coverage_categories['multiple_elements'] = True
+            
+            # Check for boundary indicators
+            boundary_indicators = ['max', 'min', '999', '1000', 'large', 'limit']
+            if any(indicator in test_str for indicator in boundary_indicators):
+                coverage_categories['boundary_values'] = True
+                
+            # Normal case if none of the above
+            if not any([coverage_categories['empty_input'], 
+                       coverage_categories['single_element'],
+                       coverage_categories['boundary_values']]):
+                coverage_categories['normal_cases'] = True
+        
+        coverage_score = sum(coverage_categories.values()) / len(coverage_categories)
+        return coverage_score
+    
+    def _assess_edge_case_detection(self, test_cases: List[Dict], problem: Dict) -> float:
+        """Assess how well test cases target edge cases."""
+        
+        edge_case_indicators = [
+            'empty', 'null', 'zero', 'negative', 'maximum', 'minimum',
+            'boundary', 'limit', 'edge', 'corner', 'special'
+        ]
+        
+        edge_case_count = 0
+        for test_case in test_cases:
+            test_str = str(test_case).lower()
+            if any(indicator in test_str for indicator in edge_case_indicators):
+                edge_case_count += 1
+        
+        # Score based on proportion of edge cases
+        edge_case_ratio = edge_case_count / len(test_cases) if test_cases else 0
+        
+        # Optimal ratio is around 30-50% edge cases
+        if 0.3 <= edge_case_ratio <= 0.5:
+            return 1.0
+        elif 0.2 <= edge_case_ratio <= 0.6:
+            return 0.8
+        elif edge_case_ratio > 0:
+            return 0.6
+        else:
+            return 0.2
+    
+    def _assess_discriminative_power(self, test_cases: List[Dict], solutions: List[Dict]) -> float:
+        """Assess how well test cases can discriminate between correct/incorrect solutions."""
+        
+        if not solutions or len(solutions) < 2:
+            return 0.5  # Can't assess without multiple solutions
+        
+        # Simple heuristic: more diverse test cases have better discriminative power
+        input_types = set()
+        input_sizes = set()
+        
+        for test_case in test_cases:
+            test_input = test_case.get('input')
+            input_types.add(type(test_input).__name__)
+            
+            if hasattr(test_input, '__len__'):
+                input_sizes.add(len(test_input))
+            else:
+                input_sizes.add(1)
+        
+        # Score based on diversity
+        type_diversity = len(input_types) / 3.0  # Expect up to 3 different types
+        size_diversity = min(1.0, len(input_sizes) / 5.0)  # Expect up to 5 different sizes
+        
+        return (type_diversity + size_diversity) / 2.0
+    
+    def _assess_execution_reliability(self, test_cases: List[Dict]) -> float:
+        """Assess the reliability and executability of test cases."""
+        
+        reliable_count = 0
+        for test_case in test_cases:
+            # Check if test case has proper structure
+            has_input = 'input' in test_case
+            has_output = 'output' in test_case or 'expected' in test_case
+            
+            if has_input and has_output:
+                # Additional check: input should be serializable
+                try:
+                    json.dumps(test_case.get('input'))
+                    reliable_count += 1
+                except:
+                    pass
+        
+        reliability_score = reliable_count / len(test_cases) if test_cases else 0
+        return reliability_score
+    
+    def _assess_input_diversity(self, test_cases: List[Dict]) -> float:
+        """Assess diversity of test inputs."""
+        
+        if not test_cases:
+            return 0.0
+        
+        # Collect input characteristics
+        input_characteristics = []
+        for test_case in test_cases:
+            test_input = test_case.get('input')
+            characteristics = {
+                'type': type(test_input).__name__,
+                'length': len(test_input) if hasattr(test_input, '__len__') else 1,
+                'str_repr': str(test_input)[:50]  # First 50 chars
+            }
+            input_characteristics.append(characteristics)
+        
+        # Count unique characteristics
+        unique_types = len(set(char['type'] for char in input_characteristics))
+        unique_lengths = len(set(char['length'] for char in input_characteristics))
+        unique_reprs = len(set(char['str_repr'] for char in input_characteristics))
+        
+        # Normalize diversity scores
+        type_diversity = min(1.0, unique_types / 3.0)
+        length_diversity = min(1.0, unique_lengths / 5.0)
+        repr_diversity = unique_reprs / len(test_cases)
+        
+        return (type_diversity + length_diversity + repr_diversity) / 3.0
+
+
 class VerificationGenerator(BasePlayer):
     """
     Player 3: Verification Generator (1.5B parameters)
@@ -54,6 +260,10 @@ class VerificationGenerator(BasePlayer):
             "type_variations",
             "large_inputs"
         ]
+        
+        # STAR Phase 2 Enhancement: Test Quality Prediction
+        self.test_quality_predictor = TestQualityPredictor()
+        self.enable_quality_prediction = True
     
     def process_input(
         self,
@@ -202,6 +412,53 @@ Focus on generating test cases that will expose bugs in incorrect implementation
         analysis["potential_bugs"] = list(set(analysis["potential_bugs"]))
         
         return analysis
+    
+    def generate_with_quality_prediction(
+        self,
+        problem: Dict,
+        solutions: List[Dict],
+        num_test_cases: int = 8,
+        quality_threshold: float = 0.6
+    ) -> Dict[str, Any]:
+        """
+        STAR Phase 2: Generate test cases with quality prediction.
+        
+        Returns both test cases and their predicted quality scores
+        to support strategic problem selection.
+        """
+        logger.info(f"🧪 Generating {num_test_cases} test cases with quality prediction")
+        
+        # Generate test cases using existing method
+        test_cases = self.generate(problem, solutions, num_test_cases)
+        
+        # Predict test quality if enabled
+        quality_metrics = {'overall_quality': 0.5, 'confidence': 0.0}
+        if self.enable_quality_prediction and test_cases:
+            quality_metrics = self.test_quality_predictor.predict_test_quality(
+                test_cases, problem, solutions
+            )
+            
+            logger.info(f"🎯 Test Quality Prediction:")
+            logger.info(f"  Overall Quality: {quality_metrics['overall_quality']:.3f}")
+            logger.info(f"  Confidence: {quality_metrics['confidence']:.3f}")
+            
+            # Log detailed quality breakdown
+            if 'coverage_completeness' in quality_metrics:
+                logger.debug(f"  Coverage: {quality_metrics['coverage_completeness']:.2f}")
+                logger.debug(f"  Edge Cases: {quality_metrics['edge_case_detection']:.2f}")
+                logger.debug(f"  Discriminative: {quality_metrics['discriminative_power']:.2f}")
+                logger.debug(f"  Reliability: {quality_metrics['execution_reliability']:.2f}")
+                logger.debug(f"  Diversity: {quality_metrics['input_diversity']:.2f}")
+        
+        # Determine if test quality meets threshold
+        quality_sufficient = quality_metrics['overall_quality'] >= quality_threshold
+        
+        return {
+            'test_cases': test_cases,
+            'quality_metrics': quality_metrics,
+            'quality_sufficient': quality_sufficient,
+            'num_generated': len(test_cases) if test_cases else 0
+        }
     
     def parse_output(self, output: str) -> List[Dict]:
         """Parse model output to extract test cases with improved JSON handling."""
