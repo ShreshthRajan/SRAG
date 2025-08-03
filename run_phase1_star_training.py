@@ -426,8 +426,12 @@ def generate_calibration_solutions(
         # Memory cleanup
         if i % (batch_size * 4) == 0:  # Every 4 batches
             gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
     
     # Filter out invalid solutions
     valid_solutions = [s for s in all_solution_data if len(s['code']) > 10]
