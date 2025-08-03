@@ -1,0 +1,26 @@
+{
+  "phase": "phase1_star_calibration",
+  "status": "target_achieved",
+  "timestamp": "2025-08-03T06:34:04.524382",
+  "metrics": {
+    "ece": 0.0625,
+    "temperature": 0.698,
+    "target_achieved": true,
+    "target_threshold": 0.1
+  },
+  "training_details": {
+    "existing_solutions_used": 240,
+    "calibrator_saved": "checkpoints/phase1_star_calibrator_success.pt",
+    "models_loaded": [
+      "Qwen2.5-1.5B-Instruct (Problem Generator)",
+      "Qwen2.5-Coder-7B-Instruct (Solution Generator)",
+      "Qwen2.5-1.5B-Instruct (Verification Generator)",
+      "Qwen2.5-0.5B-Instruct (Meta-Verifier)"
+    ]
+  },
+  "success_indicators": [
+    "ECE < 0.1 target achieved",
+    "Enhanced confidence calibrator saved",
+    "Ready for Phase 2 strategic oracle"
+  ]
+}

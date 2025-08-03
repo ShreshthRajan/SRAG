@@ -305,8 +305,14 @@ class EnhancedConfidenceCalibrator(nn.Module):
         # Maximum Calibration Error (MCE)
         mce = self._compute_mce(confidences, true_labels)
         
-        # Brier Score
-        brier_score = brier_score_loss(true_labels, confidences)
+        # Brier Score - fix for continuous targets
+        try:
+            # Convert continuous scores to binary for brier calculation
+            binary_labels = (np.array(true_labels) > 0.5).astype(int)
+            brier_score = brier_score_loss(binary_labels, confidences)
+        except Exception as e:
+            logger.warning(f"Brier score calculation failed: {e}, using MSE approximation")
+            brier_score = np.mean((np.array(true_labels) - np.array(confidences)) ** 2)
         
         # Reliability diagram data
         bin_boundaries, bin_lowers, bin_uppers, bin_accuracies, bin_confidences, bin_counts = \

@@ -1,0 +1,26 @@
+{
+  "phase": "phase1_star_calibration",
+  "status": "failed",
+  "start_time": "2025-08-02T16:36:03.137632",
+  "stages": {
+    "initialization": {
+      "status": "completed",
+      "duration": 16.350498914718628
+    },
+    "dataset_preparation": {
+      "status": "completed",
+      "duration": 19.932952880859375,
+      "train_problems": 160,
+      "val_problems": 40
+    },
+    "solution_generation": {
+      "status": "completed",
+      "duration": 2952.773875951767,
+      "train_solutions": 960,
+      "val_solutions": 240
+    }
+  },
+  "total_duration": 2989.3781599998474,
+  "error": "The type of the target inferred from y_true is continuous but should be binary according to the shape of y_prob.",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/ubuntu/srag-training/run_phase1_star_training.py\", line 529, in run_phase1_training\n    training_metrics = train_confidence_calibrator(\n  File \"/home/ubuntu/srag-training/run_phase1_star_training.py\", line 417, in train_confidence_calibrator\n    training_metrics = solution_generator.train_confidence_calibrator(\n  File \"/home/ubuntu/srag-training/src/sragv/models/solution_generator.py\", line 725, in train_confidence_calibrator\n    metrics = self.confidence_calibrator.train_calibration(\n  File \"/home/ubuntu/srag-training/src/sragv/confidence_calibration.py\", line 248, in train_calibration\n    final_metrics = self.evaluate_calibration(training_data)\n  File \"/home/ubuntu/srag-training/src/sragv/confidence_calibration.py\", line 309, in evaluate_calibration\n    brier_score = brier_score_loss(true_labels, confidences)\n  File \"/home/ubuntu/.local/lib/python3.10/site-packages/sklearn/utils/_param_validation.py\", line 218, in wrapper\n    return func(*args, **kwargs)\n  File \"/home/ubuntu/.local/lib/python3.10/site-packages/sklearn/metrics/_classification.py\", line 3609, in brier_score_loss\n    transformed_labels, y_proba = _validate_binary_probabilistic_prediction(\n  File \"/home/ubuntu/.local/lib/python3.10/site-packages/sklearn/metrics/_classification.py\", line 3446, in _validate_binary_probabilistic_prediction\n    raise ValueError(\nValueError: The type of the target inferred from y_true is continuous but should be binary according to the shape of y_prob.\n"
+}
