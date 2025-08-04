@@ -198,8 +198,8 @@ class EnhancedConfidenceCalibrator(nn.Module):
             train_true_scores.append(item['true_score'])
         
         train_features = torch.stack(train_features).to(self.device)
-        train_base_conf = torch.tensor(train_base_conf, device=self.device)
-        train_true_scores = torch.tensor(train_true_scores, device=self.device)
+        train_base_conf = torch.tensor(train_base_conf, dtype=torch.float32, device=self.device)
+        train_true_scores = torch.tensor(train_true_scores, dtype=torch.float32, device=self.device)
         
         logger.info(f"Training calibrator on {len(training_data)} samples...")
         
