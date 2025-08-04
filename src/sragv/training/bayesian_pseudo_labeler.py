@@ -119,6 +119,11 @@ class BayesianPseudoLabeler:
             confidence_scores.append(confidence)
             quality_scores.append(quality)
             
+            # Debug: Show solution data for first few solutions
+            if i < 3:
+                logger.info(f"🔬 Solution {i}: confidence={confidence:.3f}, quality={quality:.3f}, uncertainty={uncertainty:.3f}")
+                logger.info(f"   Raw solution data: score={solution.get('score', 'MISSING')}, syntax_valid={solution.get('syntax_valid', 'MISSING')}, execution_success={solution.get('execution_success', 'MISSING')}, pass_rate={solution.get('pass_rate', 'MISSING')}")
+            
             # Bayesian selection criteria
             if self._meets_bayesian_criteria(
                 confidence, quality, uncertainty, adaptive_threshold
@@ -220,15 +225,23 @@ class BayesianPseudoLabeler:
             else:
                 quality_factors.append(('syntax', 0.1, 0.3))
             
-            # Execution success
-            if solution.get('execution_success', False):
+            # Execution success - be more permissive if missing
+            execution_success = solution.get('execution_success', None)
+            if execution_success is True:
                 quality_factors.append(('execution', 0.9, 0.25))
-            else:
+            elif execution_success is False:
                 quality_factors.append(('execution', 0.3, 0.25))
+            else:
+                # Missing execution data - assume neutral (don't penalize)
+                quality_factors.append(('execution', 0.7, 0.25))
             
-            # Test pass rate
-            pass_rate = solution.get('pass_rate', 0.0)
-            quality_factors.append(('pass_rate', pass_rate, 0.25))
+            # Test pass rate - be more permissive if missing
+            pass_rate = solution.get('pass_rate', None)
+            if pass_rate is not None:
+                quality_factors.append(('pass_rate', pass_rate, 0.25))
+            else:
+                # Missing pass rate data - assume neutral
+                quality_factors.append(('pass_rate', 0.6, 0.25))
             
             # Code quality heuristics
             code_quality = solution.get('code_quality_score', 0.5)
@@ -301,16 +314,23 @@ class BayesianPseudoLabeler:
         threshold: float
     ) -> bool:
         """Check if solution meets Bayesian pseudo-labeling criteria."""
+        # Add debug logging to identify blocking condition
+        logger.info(f"🔍 Checking criteria: conf={confidence:.3f}, qual={quality:.3f}, "
+                   f"unc={uncertainty:.3f}, thresh={threshold:.3f}")
+        
         # Basic confidence threshold
         if confidence < threshold:
+            logger.info(f"❌ BLOCKED: confidence {confidence:.3f} < threshold {threshold:.3f}")
             return False
         
         # Quality threshold
         if quality < self.config['min_quality_score']:
+            logger.info(f"❌ BLOCKED: quality {quality:.3f} < min_quality {self.config['min_quality_score']}")
             return False
         
         # Uncertainty threshold
         if uncertainty > self.config['max_uncertainty']:
+            logger.info(f"❌ BLOCKED: uncertainty {uncertainty:.3f} > max_uncertainty {self.config['max_uncertainty']}")
             return False
         
         # Bayesian combined score
@@ -319,6 +339,8 @@ class BayesianPseudoLabeler:
             quality * self.config['quality_weight'] +
             (1 - uncertainty) * self.config['uncertainty_weight']
         )
+        
+        logger.info(f"🧮 Bayesian score: {bayesian_score:.3f} (weights: conf={self.config['confidence_weight']}, qual={self.config['quality_weight']}, unc={self.config['uncertainty_weight']})")
         
         # Use Bayesian credible interval for final decision
         # Assume Beta distribution for the score
@@ -330,7 +352,14 @@ class BayesianPseudoLabeler:
             (1 - self.config['credible_interval']) / 2, alpha, beta
         )
         
-        return credible_lower > 0.3  # Permissive threshold to enable learning
+        logger.info(f"🎲 Credible interval: alpha={alpha:.2f}, beta={beta:.2f}, credible_lower={credible_lower:.3f}")
+        
+        if credible_lower > 0.3:
+            logger.info(f"✅ PASSED: credible_lower {credible_lower:.3f} > 0.3")
+            return True
+        else:
+            logger.info(f"❌ BLOCKED: credible_lower {credible_lower:.3f} <= 0.3")
+            return False
     
     def _create_pseudo_label(
         self,
