@@ -437,8 +437,13 @@ class Phase3STARTrainer:
         logger.info("=" * 60)
         
         # Status for ML Foundry monitoring
-        with open('/workspace/training_status.txt', 'w') as f:
-            f.write(f"PHASE3_COMPLETE|ECE:{best_ece:.4f}|ITERATIONS:{final_metrics.get('total_iterations', 0)}")
+        try:
+            with open('/workspace/training_status.txt', 'w') as f:
+                f.write(f"PHASE3_COMPLETE|ECE:{best_ece:.4f}|ITERATIONS:{final_metrics.get('total_iterations', 0)}")
+        except FileNotFoundError:
+            # Alternative status file for non-ML Foundry environments
+            with open('phase3_training_status.txt', 'w') as f:
+                f.write(f"PHASE3_COMPLETE|ECE:{best_ece:.4f}|ITERATIONS:{final_metrics.get('total_iterations', 0)}")
 
 
 def main():
