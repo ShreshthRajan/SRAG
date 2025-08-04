@@ -169,9 +169,27 @@ class Phase3STARTrainer:
             from sragv.strategic_oracle import StrategicOracle
             from sragv.training.star_trainer import STARTrainer
             
-            # Initialize orchestrator
+            # Initialize orchestrator with explicit model loading
             logger.info("Initializing SRAG-V orchestrator...")
             self.orchestrator = SRAGVOrchestrator()
+            
+            # Force initialize solution generator if not already done
+            if self.orchestrator.solution_generator is None:
+                logger.info("Solution generator not initialized, creating manually...")
+                from sragv.models.solution_generator import SolutionGenerator
+                
+                # Use same config as successful Phase 1 training
+                solution_config = {
+                    'model_name': 'Qwen/Qwen2.5-Coder-7B-Instruct',
+                    'max_length': 2048,
+                    'temperature': 0.8,
+                    'top_p': 0.95,
+                    'quantization': {'load_in_4bit': True},
+                    'lora_config': {'r': 32, 'alpha': 64}
+                }
+                
+                self.orchestrator.solution_generator = SolutionGenerator(solution_config)
+                logger.info("✅ Solution generator initialized manually")
             
             # Explicitly load Phase 1 calibrator
             logger.info("Loading Phase 1 confidence calibrator...")
