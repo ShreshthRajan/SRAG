@@ -225,7 +225,7 @@ def run_phase1_to_phase3_training():
             'bayesian_labeler_config': {
                 'base_confidence_threshold': 0.75,  # Start lower, adapt up
                 'adaptive_threshold_enabled': True,  # Key: let it adapt
-                'min_quality_score': 0.5,           # Very permissive (avg was 0.423)
+                'min_quality_score': 0.4,           # Below average to enable learning (avg was 0.423)
                 'max_uncertainty': 0.4,             # More tolerance for uncertainty
                 'confidence_weight': 0.4,           # Balance confidence vs quality
                 'quality_weight': 0.35,             # Reduce quality dominance  
