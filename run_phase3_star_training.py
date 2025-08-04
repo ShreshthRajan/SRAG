@@ -169,15 +169,44 @@ class Phase3STARTrainer:
             from sragv.strategic_oracle import StrategicOracle
             from sragv.training.star_trainer import STARTrainer
             
-            # Initialize orchestrator (loads Phase 1 calibrator automatically)
+            # Initialize orchestrator
             logger.info("Initializing SRAG-V orchestrator...")
             self.orchestrator = SRAGVOrchestrator()
             
-            # Verify Phase 1 calibrator is loaded
-            if not hasattr(self.orchestrator.solution_generator, 'confidence_calibrator'):
-                raise Exception("Phase 1 confidence calibrator not loaded")
-                
-            logger.info("✅ Phase 1 calibrator loaded successfully")
+            # Explicitly load Phase 1 calibrator
+            logger.info("Loading Phase 1 confidence calibrator...")
+            calibrator_paths = [
+                "checkpoints/phase1_star_calibrator_1754272154.pt",  # ECE 0.0003 version
+                "checkpoints/phase1_star_calibrator_latest.pt",
+                "checkpoints/phase1_star_calibrator_success.pt"
+            ]
+            
+            calibrator_loaded = False
+            for path in calibrator_paths:
+                if Path(path).exists():
+                    try:
+                        # Load the calibrator checkpoint
+                        checkpoint = torch.load(path, map_location='cpu')
+                        if 'state_dict' in checkpoint:
+                            # Initialize and load the calibrator
+                            from sragv.confidence_calibration import EnhancedConfidenceCalibrator
+                            calibrator = EnhancedConfidenceCalibrator()
+                            calibrator.load_state_dict(checkpoint['state_dict'])
+                            
+                            # Assign to solution generator
+                            self.orchestrator.solution_generator.confidence_calibrator = calibrator
+                            self.orchestrator.solution_generator.use_calibration = True
+                            
+                            logger.info(f"✅ Phase 1 calibrator loaded from: {path}")
+                            logger.info(f"✅ Calibrator temperature: {float(calibrator.temperature):.3f}")
+                            calibrator_loaded = True
+                            break
+                    except Exception as e:
+                        logger.warning(f"Failed to load calibrator from {path}: {e}")
+                        continue
+            
+            if not calibrator_loaded:
+                raise Exception("Could not load Phase 1 confidence calibrator from any path")
             
             # Initialize Strategic Oracle with the calibrator
             logger.info("Initializing Strategic Oracle...")
