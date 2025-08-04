@@ -212,21 +212,26 @@ def run_phase1_to_phase3_training():
         strategic_oracle = StrategicOracle(solution_generator.confidence_calibrator)
         logger.info("✅ Strategic Oracle initialized")
         
-        # Initialize STARTrainer with optimized config for production
+        # Initialize STARTrainer with research-backed progressive thresholds
         star_config = {
             'max_iterations': 6,          # Balanced for quality vs time
             'batch_size': 32,             # Efficient batch size
             'problems_per_batch': 12,     # Manageable problem selection
             'solutions_per_problem': 6,   # Standard generation count
-            'confidence_threshold': 0.85, # High-confidence threshold
-            'max_ece_degradation': 0.005, # Don't degrade much from 0.0003
-            'early_stopping_patience': 3,
+            'confidence_threshold': 0.75, # Lower initial threshold (progressive learning)
+            'max_ece_degradation': 0.02,  # More tolerant for initial learning
+            'early_stopping_patience': 4, # More patience for convergence
             'checkpoint_frequency': 2,
             'bayesian_labeler_config': {
-                'base_confidence_threshold': 0.85,
-                'adaptive_threshold_enabled': True,
-                'min_quality_score': 0.8,
-                'max_uncertainty': 0.2
+                'base_confidence_threshold': 0.75,  # Start lower, adapt up
+                'adaptive_threshold_enabled': True,  # Key: let it adapt
+                'min_quality_score': 0.5,           # Very permissive (avg was 0.423)
+                'max_uncertainty': 0.4,             # More tolerance for uncertainty
+                'confidence_weight': 0.4,           # Balance confidence vs quality
+                'quality_weight': 0.35,             # Reduce quality dominance  
+                'uncertainty_weight': 0.25,         # Consider uncertainty appropriately
+                'min_confidence_threshold': 0.7,    # Progressive lower bound
+                'max_confidence_threshold': 0.9     # Progressive upper bound
             }
         }
         
