@@ -330,7 +330,7 @@ class BayesianPseudoLabeler:
             (1 - self.config['credible_interval']) / 2, alpha, beta
         )
         
-        return credible_lower > 0.5  # Reasonable threshold for credible interval
+        return credible_lower > 0.3  # Permissive threshold to enable learning
     
     def _create_pseudo_label(
         self,
