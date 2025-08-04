@@ -230,8 +230,9 @@ def run_phase1_to_phase3_training():
                 'confidence_weight': 0.4,           # Balance confidence vs quality
                 'quality_weight': 0.35,             # Reduce quality dominance  
                 'uncertainty_weight': 0.25,         # Consider uncertainty appropriately
-                'min_confidence_threshold': 0.7,    # Progressive lower bound
-                'max_confidence_threshold': 0.9     # Progressive upper bound
+                'min_confidence_threshold': 0.5,    # Conservative bound below data distribution
+                'max_confidence_threshold': 0.75,   # Research-backed: stay within empirical range
+                'threshold_adaptation_rate': 0.05,   # Slower adaptation to prevent overshoot
             }
         }
         
