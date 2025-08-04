@@ -119,8 +119,8 @@ class BayesianPseudoLabeler:
             confidence_scores.append(confidence)
             quality_scores.append(quality)
             
-            # Debug: Show solution data for first few solutions
-            if i < 3:
+            # Debug: Show solution data for first 10 solutions to see distribution
+            if i < 10:
                 logger.info(f"🔬 Solution {i}: confidence={confidence:.3f}, quality={quality:.3f}, uncertainty={uncertainty:.3f}")
                 logger.info(f"   Raw solution data: score={solution.get('score', 'MISSING')}, syntax_valid={solution.get('syntax_valid', 'MISSING')}, execution_success={solution.get('execution_success', 'MISSING')}, pass_rate={solution.get('pass_rate', 'MISSING')}")
             

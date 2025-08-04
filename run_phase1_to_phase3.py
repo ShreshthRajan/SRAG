@@ -218,12 +218,12 @@ def run_phase1_to_phase3_training():
             'batch_size': 32,             # Efficient batch size
             'problems_per_batch': 12,     # Manageable problem selection
             'solutions_per_problem': 6,   # Standard generation count
-            'confidence_threshold': 0.75, # Lower initial threshold (progressive learning)
+            'confidence_threshold': 0.52, # Capture all solutions based on Phase 1 distribution (min ~0.53)
             'max_ece_degradation': 0.02,  # More tolerant for initial learning
             'early_stopping_patience': 4, # More patience for convergence
             'checkpoint_frequency': 2,
             'bayesian_labeler_config': {
-                'base_confidence_threshold': 0.75,  # Start lower, adapt up
+                'base_confidence_threshold': 0.52,  # Capture all solutions based on Phase 1 data
                 'adaptive_threshold_enabled': True,  # Key: let it adapt
                 'min_quality_score': 0.4,           # Below average to enable learning (avg was 0.423)
                 'max_uncertainty': 0.4,             # More tolerance for uncertainty
