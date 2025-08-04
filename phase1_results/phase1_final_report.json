@@ -1,26 +1,195 @@
 {
   "phase": "phase1_star_calibration",
-  "status": "failed",
-  "start_time": "2025-08-02T16:36:03.137632",
+  "status": "completed",
+  "start_time": "2025-08-04T00:07:45.697987",
   "stages": {
     "initialization": {
       "status": "completed",
-      "duration": 16.350498914718628
+      "duration": 14.83984112739563
     },
     "dataset_preparation": {
       "status": "completed",
-      "duration": 19.932952880859375,
+      "duration": 5.715694189071655,
       "train_problems": 160,
       "val_problems": 40
     },
     "solution_generation": {
       "status": "completed",
-      "duration": 2952.773875951767,
-      "train_solutions": 960,
+      "duration": 6067.386118888855,
+      "train_solutions": 951,
       "val_solutions": 240
+    },
+    "calibration_training": {
+      "status": "completed",
+      "duration": 0.38479089736938477,
+      "training_metrics": {
+        "ece": 0.006218431776320111,
+        "mce": 0.12322568875645823,
+        "brier_score": 0.1515617942208117,
+        "temperature": 1.2312102317810059,
+        "num_samples": 951,
+        "reliability_data": {
+          "bin_boundaries": [
+            0.0,
+            0.06666666666666667,
+            0.13333333333333333,
+            0.2,
+            0.26666666666666666,
+            0.3333333333333333,
+            0.4,
+            0.4666666666666667,
+            0.5333333333333333,
+            0.6,
+            0.6666666666666666,
+            0.7333333333333333,
+            0.8,
+            0.8666666666666667,
+            0.9333333333333333,
+            1.0
+          ],
+          "bin_accuracies": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.47131746031746047,
+            0.6250015191995392,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "bin_confidences": [
+            0.03333333333333333,
+            0.1,
+            0.16666666666666669,
+            0.23333333333333334,
+            0.3,
+            0.3666666666666667,
+            0.43333333333333335,
+            0.5,
+            0.5945431490739187,
+            0.6241893633232914,
+            0.7,
+            0.7666666666666666,
+            0.8333333333333334,
+            0.9,
+            0.9666666666666667
+          ],
+          "bin_counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            42,
+            909,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "calibration_validation": {
+      "status": "completed",
+      "duration": 0.06259536743164062,
+      "calibration_metrics": {
+        "ece": 0.00026236368815113487,
+        "mce": 0.00026236368815113487,
+        "brier_score": 0.14145244592326406,
+        "temperature": 1.2312102317810059,
+        "num_samples": 240,
+        "reliability_data": {
+          "bin_boundaries": [
+            0.0,
+            0.06666666666666667,
+            0.13333333333333333,
+            0.2,
+            0.26666666666666666,
+            0.3333333333333333,
+            0.4,
+            0.4666666666666667,
+            0.5333333333333333,
+            0.6,
+            0.6666666666666666,
+            0.7333333333333333,
+            0.8,
+            0.8666666666666667,
+            0.9333333333333333,
+            1.0
+          ],
+          "bin_accuracies": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.6237124999999999,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "bin_confidences": [
+            0.03333333333333333,
+            0.1,
+            0.16666666666666669,
+            0.23333333333333334,
+            0.3,
+            0.3666666666666667,
+            0.43333333333333335,
+            0.5,
+            0.5666666666666667,
+            0.623974863688151,
+            0.7,
+            0.7666666666666666,
+            0.8333333333333334,
+            0.9,
+            0.9666666666666667
+          ],
+          "bin_counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            240,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "quality_status": "excellent",
+        "target_achieved": "True"
+      }
     }
   },
-  "total_duration": 2989.3781599998474,
-  "error": "The type of the target inferred from y_true is continuous but should be binary according to the shape of y_prob.",
-  "traceback": "Traceback (most recent call last):\n  File \"/home/ubuntu/srag-training/run_phase1_star_training.py\", line 529, in run_phase1_training\n    training_metrics = train_confidence_calibrator(\n  File \"/home/ubuntu/srag-training/run_phase1_star_training.py\", line 417, in train_confidence_calibrator\n    training_metrics = solution_generator.train_confidence_calibrator(\n  File \"/home/ubuntu/srag-training/src/sragv/models/solution_generator.py\", line 725, in train_confidence_calibrator\n    metrics = self.confidence_calibrator.train_calibration(\n  File \"/home/ubuntu/srag-training/src/sragv/confidence_calibration.py\", line 248, in train_calibration\n    final_metrics = self.evaluate_calibration(training_data)\n  File \"/home/ubuntu/srag-training/src/sragv/confidence_calibration.py\", line 309, in evaluate_calibration\n    brier_score = brier_score_loss(true_labels, confidences)\n  File \"/home/ubuntu/.local/lib/python3.10/site-packages/sklearn/utils/_param_validation.py\", line 218, in wrapper\n    return func(*args, **kwargs)\n  File \"/home/ubuntu/.local/lib/python3.10/site-packages/sklearn/metrics/_classification.py\", line 3609, in brier_score_loss\n    transformed_labels, y_proba = _validate_binary_probabilistic_prediction(\n  File \"/home/ubuntu/.local/lib/python3.10/site-packages/sklearn/metrics/_classification.py\", line 3446, in _validate_binary_probabilistic_prediction\n    raise ValueError(\nValueError: The type of the target inferred from y_true is continuous but should be binary according to the shape of y_prob.\n"
+  "total_duration": 6088.389517784119,
+  "end_time": "2025-08-04T01:49:14.087506",
+  "final_ece": 0.00026236368815113487,
+  "target_achieved": "True",
+  "quality_status": "excellent",
+  "calibrator_path": "checkpoints/phase1_star_calibrator_1754272154.pt"
 }

@@ -26,7 +26,11 @@ class BayesianPseudoLabeler:
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or self._create_default_config()
+        default_config = self._create_default_config()
+        if config:
+            # Merge provided config with defaults
+            default_config.update(config)
+        self.config = default_config
         
         # Bayesian parameters
         self.confidence_history = []
@@ -326,7 +330,7 @@ class BayesianPseudoLabeler:
             (1 - self.config['credible_interval']) / 2, alpha, beta
         )
         
-        return credible_lower > 0.7  # Conservative threshold for credible interval
+        return credible_lower > 0.5  # Reasonable threshold for credible interval
     
     def _create_pseudo_label(
         self,

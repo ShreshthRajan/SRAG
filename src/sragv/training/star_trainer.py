@@ -39,12 +39,16 @@ class STARTrainer:
     ):
         self.orchestrator = orchestrator
         self.strategic_oracle = strategic_oracle
-        self.config = config or self._create_default_config()
+        
+        # Merge provided config with defaults
+        default_config = self._create_default_config()
+        if config:
+            default_config.update(config)
+        self.config = default_config
         
         # Initialize Bayesian pseudo-labeler
-        self.bayesian_pseudo_labeler = BayesianPseudoLabeler(
-            config=self.config.get('bayesian_labeler_config')
-        )
+        bayesian_config = self.config.get('bayesian_labeler_config', {})
+        self.bayesian_pseudo_labeler = BayesianPseudoLabeler(config=bayesian_config)
         
         # Training state
         self.training_history = []
@@ -270,9 +274,8 @@ class STARTrainer:
             weights = self.config  # Use configured weights
         
         selected = self.strategic_oracle.strategic_problem_selection(
-            problems,
-            num_problems=self.config['problems_per_batch'],
-            strategy_weights=weights
+            candidate_problems=problems,
+            num_select=self.config['problems_per_batch']
         )
         
         logger.info(f"✅ Selected {len(selected)} problems strategically")
@@ -467,8 +470,8 @@ class STARTrainer:
         for problem in validation_problems[:5]:  # Sample for efficiency
             solutions = self.orchestrator.solution_generator.generate(
                 problem=problem,
-                num_solutions=2,
-                include_confidence=True
+                num_solutions=2
+                # Note: Confidence is included in 'score' field by default
             )
             val_solutions.extend(solutions)
         
