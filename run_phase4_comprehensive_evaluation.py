@@ -500,8 +500,7 @@ class SRAGV_Phase4_Evaluator:
                     # Generate solutions
                     solutions = orchestrator.solution_generator.generate(
                         problem, 
-                        num_solutions=self.config.max_solutions_per_problem,
-                        temperature=self.config.evaluation_temperature
+                        num_solutions=self.config.max_solutions_per_problem
                     )
                     
                     if not solutions:
