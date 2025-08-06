@@ -366,7 +366,11 @@ class SRAGV_Phase4_Evaluator:
                 phase3_checkpoint = torch.load(phase3_calibrator_path, map_location='cpu', weights_only=False)
                 calibrator_phase3.load_state_dict(phase3_checkpoint['state_dict'])
                 phase3_pseudo_labels = phase3_checkpoint.get('pseudo_labels_used', 432)
+                
+                # CRITICAL FIX: Phase 3 calibrator is trained but missing is_trained flag
+                calibrator_phase3.is_trained = True
                 logger.info(f"✅ Phase 3 calibrator loaded with {phase3_pseudo_labels} pseudo-labels")
+                logger.info(f"✅ Phase 3 calibrator marked as trained (is_trained = True)")
             else:
                 logger.warning(f"Phase 3 calibrator not found at {phase3_calibrator_path}")
                 logger.info("Using Phase 1 calibrator as fallback (this may cause identical results)")
