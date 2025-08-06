@@ -198,6 +198,9 @@ class STARTrainer:
                     logger.warning(f"⚠️ ECE degraded to {current_ece:.4f}, stopping training")
                     break
                 
+                # Update cumulative pseudo-label count
+                self.pseudo_labels_created += len(pseudo_labeled_data)
+                
                 # Record iteration results
                 iteration_result = {
                     'iteration': iteration + 1,
@@ -526,8 +529,9 @@ class STARTrainer:
         return ece
     
     def _save_checkpoint(self, iteration: int, checkpoint_type: str) -> None:
-        """Save training checkpoint."""
+        """Save training checkpoint including calibrator state."""
         checkpoint_path = self.checkpoint_dir / f"star_phase3_iter_{iteration}_{checkpoint_type}.json"
+        calibrator_path = self.checkpoint_dir / f"star_phase3_iter_{iteration}_{checkpoint_type}_calibrator.pt"
         
         checkpoint_data = {
             'iteration': iteration,
@@ -536,11 +540,25 @@ class STARTrainer:
             'performance_metrics': self.performance_metrics,
             'config': self.config,
             'total_solutions_generated': self.total_solutions_generated,
-            'pseudo_labels_created': self.pseudo_labels_created
+            'pseudo_labels_created': self.pseudo_labels_created,
+            'calibrator_path': str(calibrator_path)
         }
         
+        # Save JSON metadata
         with open(checkpoint_path, 'w') as f:
             json.dump(checkpoint_data, f, indent=2)
+        
+        # Save calibrator state if available
+        if hasattr(self.orchestrator.solution_generator, 'confidence_calibrator') and \
+           self.orchestrator.solution_generator.confidence_calibrator is not None:
+            calibrator = self.orchestrator.solution_generator.confidence_calibrator
+            torch.save({
+                'state_dict': calibrator.state_dict(),
+                'iteration': iteration,
+                'timestamp': checkpoint_data['timestamp'],
+                'pseudo_labels_used': self.pseudo_labels_created
+            }, calibrator_path)
+            logger.info(f"💾 Calibrator saved: {calibrator_path}")
         
         logger.info(f"💾 Checkpoint saved: {checkpoint_path}")
     

@@ -357,13 +357,21 @@ class SRAGV_Phase4_Evaluator:
             orchestrator_phase3 = SRAGVOrchestrator("config/config.yaml")
             orchestrator_phase3.initialize_players()
             
-            # Load the same base calibrator (Phase 3 builds on Phase 1)
+            # Load Phase 3 trained calibrator (updated with 432 pseudo-labels)
+            phase3_calibrator_path = "checkpoints/phase3_star_training/star_phase3_iter_5_best_calibrator.pt"
             calibrator_phase3 = EnhancedConfidenceCalibrator()
-            calibrator_phase3.load_state_dict(checkpoint['state_dict'])
             
-            # Note: In full implementation, we would load Phase 3 updated calibrator
-            # For now, we use the Phase 1 calibrator as Phase 3 continuous training
-            # maintains the calibration quality while expanding capabilities
+            if Path(phase3_calibrator_path).exists():
+                logger.info(f"Loading Phase 3 trained calibrator: {phase3_calibrator_path}")
+                phase3_checkpoint = torch.load(phase3_calibrator_path, map_location='cpu')
+                calibrator_phase3.load_state_dict(phase3_checkpoint['state_dict'])
+                phase3_pseudo_labels = phase3_checkpoint.get('pseudo_labels_used', 432)
+                logger.info(f"✅ Phase 3 calibrator loaded with {phase3_pseudo_labels} pseudo-labels")
+            else:
+                logger.warning(f"Phase 3 calibrator not found at {phase3_calibrator_path}")
+                logger.info("Using Phase 1 calibrator as fallback (this may cause identical results)")
+                calibrator_phase3.load_state_dict(checkpoint['state_dict'])
+                phase3_pseudo_labels = 0
             
             orchestrator_phase3.solution_generator.confidence_calibrator = calibrator_phase3
             orchestrator_phase3.solution_generator.use_calibration = True
@@ -372,9 +380,9 @@ class SRAGV_Phase4_Evaluator:
                 "orchestrator": orchestrator_phase3,
                 "calibrator": calibrator_phase3,
                 "description": "Phase 3 with 432 pseudo-labels + continuous learning",
-                "training_data_size": 951 + 432,  # Phase 1 + Phase 3 pseudo-labels
+                "training_data_size": 951 + phase3_pseudo_labels,  # Phase 1 + Phase 3 pseudo-labels
                 "ece_baseline": 0.634573,  # From Phase 3 results
-                "pseudo_labels": 432,
+                "pseudo_labels": phase3_pseudo_labels,
                 "star_iterations": 6
             }
             

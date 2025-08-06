@@ -300,6 +300,26 @@ def run_phase1_to_phase3_training():
         logger.info(f"💡 Solutions generated: {total_solutions}")
         logger.info(f"🏷️ Pseudo-labels created: {total_pseudo_labels}")
         
+        # CRITICAL FIX: Save final trained calibrator
+        logger.info("💾 Saving final trained calibrator...")
+        final_calibrator_path = f"checkpoints/phase3_star_training/phase3_final_calibrator_{int(time.time())}.pt"
+        Path(final_calibrator_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        if hasattr(star_trainer.orchestrator.solution_generator, 'confidence_calibrator') and \
+           star_trainer.orchestrator.solution_generator.confidence_calibrator is not None:
+            calibrator = star_trainer.orchestrator.solution_generator.confidence_calibrator
+            torch.save({
+                'state_dict': calibrator.state_dict(),
+                'pseudo_labels_used': total_pseudo_labels,
+                'iterations': total_iterations,
+                'best_ece': best_ece,
+                'training_timestamp': datetime.now().isoformat(),
+                'phase1_baseline': phase1_baseline
+            }, final_calibrator_path)
+            logger.info(f"✅ Final calibrator saved: {final_calibrator_path}")
+        else:
+            logger.error("❌ No trained calibrator found to save!")
+        
         # ===============================================================
         # STAGE 6: FINAL RESULTS AND REPORTING
         # ===============================================================
