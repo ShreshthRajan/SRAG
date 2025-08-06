@@ -333,7 +333,7 @@ class SRAGV_Phase4_Evaluator:
             if not Path(calibrator_path).exists():
                 raise FileNotFoundError(f"Phase 1 calibrator not found: {calibrator_path}")
             
-            checkpoint = torch.load(calibrator_path, map_location='cpu')
+            checkpoint = torch.load(calibrator_path, map_location='cpu', weights_only=False)
             calibrator_phase1 = EnhancedConfidenceCalibrator()
             calibrator_phase1.load_state_dict(checkpoint['state_dict'])
             
@@ -363,7 +363,7 @@ class SRAGV_Phase4_Evaluator:
             
             if Path(phase3_calibrator_path).exists():
                 logger.info(f"Loading Phase 3 trained calibrator: {phase3_calibrator_path}")
-                phase3_checkpoint = torch.load(phase3_calibrator_path, map_location='cpu')
+                phase3_checkpoint = torch.load(phase3_calibrator_path, map_location='cpu', weights_only=False)
                 calibrator_phase3.load_state_dict(phase3_checkpoint['state_dict'])
                 phase3_pseudo_labels = phase3_checkpoint.get('pseudo_labels_used', 432)
                 logger.info(f"✅ Phase 3 calibrator loaded with {phase3_pseudo_labels} pseudo-labels")
