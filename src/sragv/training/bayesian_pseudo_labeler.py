@@ -124,10 +124,20 @@ class BayesianPseudoLabeler:
                 logger.info(f"🔬 Solution {i}: confidence={confidence:.3f}, quality={quality:.3f}, uncertainty={uncertainty:.3f}")
                 logger.info(f"   Raw solution data: score={solution.get('score', 'MISSING')}, syntax_valid={solution.get('syntax_valid', 'MISSING')}, execution_success={solution.get('execution_success', 'MISSING')}, pass_rate={solution.get('pass_rate', 'MISSING')}")
             
-            # Bayesian selection criteria
-            if self._meets_bayesian_criteria(
-                confidence, quality, uncertainty, adaptive_threshold
-            ):
+            # ROBUST: Add progress tracking to detect infinite loops
+            if i % 10 == 0:
+                logger.info(f"📈 Processing solution {i}/{len(solutions)}")
+            
+            # Bayesian selection criteria with timeout protection
+            try:
+                meets_criteria = self._meets_bayesian_criteria(
+                    confidence, quality, uncertainty, adaptive_threshold
+                )
+            except Exception as e:
+                logger.warning(f"Bayesian criteria failed for solution {i}: {e}")
+                meets_criteria = confidence >= adaptive_threshold  # Simple fallback
+            
+            if meets_criteria:
                 pseudo_label = self._create_pseudo_label(
                     solution, confidence, quality, uncertainty, iteration
                 )
@@ -348,9 +358,40 @@ class BayesianPseudoLabeler:
         beta = self.config['prior_beta'] + (1 - bayesian_score) * 10
         
         # Check if lower bound of credible interval is above minimum threshold
-        credible_lower = stats.beta.ppf(
-            (1 - self.config['credible_interval']) / 2, alpha, beta
-        )
+        # ROBUST: Add timeout protection and numerical stability for Beta PPF
+        try:
+            q = (1 - self.config['credible_interval']) / 2
+            # Clamp parameters to prevent numerical issues
+            alpha_safe = max(alpha, 0.01)
+            beta_safe = max(beta, 0.01) 
+            
+            # Use timeout protection for hanging Beta distribution calls
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Beta PPF computation timed out")
+            
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(3)  # 3 second timeout
+            
+            try:
+                credible_lower = stats.beta.ppf(q, alpha_safe, beta_safe)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+            
+            # Validate result
+            if not np.isfinite(credible_lower) or credible_lower < 0 or credible_lower > 1:
+                # Fallback: use Beta distribution mean
+                credible_lower = alpha_safe / (alpha_safe + beta_safe)
+                logger.warning(f"Invalid Beta PPF result, using mean fallback: {credible_lower:.3f}")
+            
+        except (TimeoutError, Exception) as e:
+            # Emergency fallback: use Beta distribution mean
+            alpha_safe = max(alpha, 0.01)
+            beta_safe = max(beta, 0.01)
+            credible_lower = alpha_safe / (alpha_safe + beta_safe)
+            logger.warning(f"Beta PPF failed ({str(e)}), using mean fallback: {credible_lower:.3f}")
         
         logger.info(f"🎲 Credible interval: alpha={alpha:.2f}, beta={beta:.2f}, credible_lower={credible_lower:.3f}")
         
