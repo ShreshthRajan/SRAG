@@ -358,7 +358,7 @@ class SRAGV_Phase4_Evaluator:
             orchestrator_phase3.initialize_players()
             
             # Load Phase 3 trained calibrator (updated with 432 pseudo-labels)
-            phase3_calibrator_path = "checkpoints/phase3_star_training/star_phase3_iter_5_best_calibrator.pt"
+            phase3_calibrator_path = "checkpoints/phase3_star_training/phase3_final_calibrator_1754491530.pt"
             calibrator_phase3 = EnhancedConfidenceCalibrator()
             
             if Path(phase3_calibrator_path).exists():
