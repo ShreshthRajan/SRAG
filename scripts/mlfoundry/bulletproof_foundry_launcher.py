@@ -80,8 +80,7 @@ class BulletproofFoundryLauncher:
         
         # Check required files exist
         required_files = [
-            "run_phase1_star_training.py",
-            "bulletproof_training_launcher.py",
+            "run_phase4_step1_humaneval.py",
             "src/sragv/models/solution_generator.py",
             "src/sragv/models/base_player.py",
             "src/sragv/confidence_calibration.py"
@@ -121,7 +120,7 @@ cd /workspace && mkdir -p logs checkpoints monitoring artifacts phase1_results
 
 # Install dependencies
 log_ts "📦 Installing dependencies..."
-pip install torch>=2.0.0 transformers>=4.40.0 accelerate>=0.25.0 peft>=0.16.0 bitsandbytes>=0.41.0 datasets>=2.0.0 numpy>=1.24.0 pyyaml>=6.0 tqdm>=4.66.0 scikit-learn>=1.3.0 python-dotenv>=1.0.0 matplotlib>=3.5.0 seaborn>=0.11.0 --no-cache-dir --timeout=300
+pip install torch>=2.0.0 transformers>=4.40.0 accelerate>=0.25.0 peft>=0.16.0 bitsandbytes>=0.41.0 datasets>=2.0.0 numpy>=1.24.0 pyyaml>=6.0 tqdm>=4.66.0 scikit-learn>=1.3.0 python-dotenv>=1.0.0 matplotlib>=3.5.0 seaborn>=0.11.0 jinja2>=3.1.0 human-eval --no-cache-dir --timeout=300
 
 # Clone repository
 log_ts "📥 Cloning repository..."
@@ -197,18 +196,18 @@ with open('data/expanded_apps.json', 'w') as f: json.dump(problems, f)
 print('Created {} problems'.format(len(problems)))
 "
 
-# Run Phase 1 training
-log_ts "🎯 STARTING PHASE 1 STAR TRAINING..."
+# Run Phase 4 Step 1 evaluation
+log_ts "🎯 STARTING PHASE 4 STEP 1 HUMANEVAL EVALUATION..."
 exec > >(tee -a /workspace/logs/training_$(date +%Y%m%d_%H%M%S).log) 2>&1
 
-if python3 run_phase1_star_training.py; then
-    log_ts "🎉 PHASE 1 STAR TRAINING SUCCESS!"
+if python3 run_phase4_step1_humaneval.py; then
+    log_ts "🎉 PHASE 4 STEP 1 EVALUATION SUCCESS!"
     echo "SUCCESS" > /workspace/training_status.txt
 else
-    log_ts "❌ PHASE 1 TRAINING FAILED"
+    log_ts "❌ PHASE 4 EVALUATION FAILED"
     echo "FAILED:$?" > /workspace/training_status.txt
     mkdir -p /workspace/artifacts
-    cp -r logs checkpoints phase1_results /workspace/artifacts/ 2>/dev/null || true
+    cp -r logs checkpoints phase4_results /workspace/artifacts/ 2>/dev/null || true
     exit $?
 fi
 
@@ -240,7 +239,7 @@ log_ts "🏁 DEPLOYMENT COMPLETE"
             # Create spot bid payload (fixed API format)
             bid_payload = {
                 "project": self.project_id,
-                "name": f"sragv-phase1-star-{int(time.time())}",
+                "name": f"sragv-phase4-humaneval-{int(time.time())}",
                 "limit_price": f"${bid_price:.2f}",
                 "instance_quantity": 1,
                 "instance_type": "it_fK7Cx6TVhOK5ZfXT",  # 4×A100 instance type (singular)

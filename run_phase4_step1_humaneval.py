@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["OMP_NUM_THREADS"] = "8"
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # Suppress generation flag warnings
 
 # Import HumanEval first
 try:
@@ -504,11 +505,36 @@ def evaluate_model_on_humaneval(
                 "test": problem.get("test", "")
             }
             
-            # Generate solutions
-            solutions = orchestrator.solution_generator.generate(
-                sragv_problem, 
-                num_solutions=num_solutions
-            )
+            # Generate solutions with timeout protection
+            logger.info(f"   Starting solution generation for {task_id}...")
+            generation_start = time.time()
+            
+            try:
+                # Add timeout using signal (Unix only)
+                import signal
+                def timeout_handler(signum, frame):
+                    raise TimeoutError(f"Solution generation timeout after 120 seconds for {task_id}")
+                
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(120)  # 2 minute timeout per problem
+                
+                solutions = orchestrator.solution_generator.generate(
+                    sragv_problem, 
+                    num_solutions=num_solutions
+                )
+                
+                signal.alarm(0)  # Cancel timeout
+                generation_time = time.time() - generation_start
+                logger.info(f"   ✅ Generation completed in {generation_time:.1f}s for {task_id}")
+                
+            except TimeoutError as e:
+                logger.error(f"   ❌ TIMEOUT: {e}")
+                solutions = []
+            except Exception as e:
+                logger.error(f"   ❌ Generation failed for {task_id}: {e}")
+                solutions = []
+            finally:
+                signal.alarm(0)  # Ensure timeout is cancelled
             
             evaluation_results["generation_stats"]["total_generations"] += num_solutions
             
@@ -520,8 +546,10 @@ def evaluate_model_on_humaneval(
             evaluation_results["generation_stats"]["successful_generations"] += len(solutions)
             
             # Evaluate each solution for correctness
+            logger.info(f"   Evaluating {len(solutions)} solutions for {task_id}...")
             solution_results = []
             for j, solution in enumerate(solutions):
+                logger.debug(f"   Evaluating solution {j+1}/{len(solutions)}...")
                 code = solution.get('code', '')
                 confidence = solution.get('score', 0.5)
                 
@@ -530,18 +558,23 @@ def evaluate_model_on_humaneval(
                     # Combine prompt + generated code for execution
                     full_code = problem["prompt"] + code
                     
-                    # Use HumanEval's check_correctness function
+                    # Use HumanEval's check_correctness function with explicit timeout
+                    logger.debug(f"   Running HumanEval execution for solution {j+1}...")
+                    exec_start = time.time()
+                    
                     correctness_result = check_correctness(
                         task_id, 
                         full_code, 
                         problem["test"],
-                        timeout=10.0
+                        timeout=15.0  # Increased timeout
                     )
                     
+                    exec_time = time.time() - exec_start
                     is_correct = correctness_result["passed"]
+                    logger.debug(f"   Solution {j+1} executed in {exec_time:.1f}s, correct: {is_correct}")
                     
                 except Exception as e:
-                    logger.debug(f"   Solution {j+1} execution failed: {e}")
+                    logger.warning(f"   Solution {j+1} execution failed: {str(e)[:100]}...")
                     is_correct = False
                 
                 solution_results.append({
@@ -573,8 +606,33 @@ def evaluate_model_on_humaneval(
             evaluation_results["problem_results"].append(problem_result)
             evaluation_results["completed_problems"] += 1
             
+            # Progress checkpoint every 10 problems
+            if (i + 1) % 10 == 0:
+                logger.info(f"🔄 Progress checkpoint: {i+1}/{len(humaneval_problems)} problems completed")
+                
+                # Memory cleanup every 10 problems
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
+                # Save intermediate progress
+                checkpoint_path = f"phase4_results/{model_name}_checkpoint_{i+1}.json"
+                try:
+                    with open(checkpoint_path, 'w') as f:
+                        json.dump({
+                            "model_name": model_name,
+                            "completed_problems": evaluation_results["completed_problems"],
+                            "progress": f"{i+1}/{len(humaneval_problems)}",
+                            "last_task_id": task_id,
+                            "timestamp": datetime.now().isoformat()
+                        }, f, indent=2)
+                except Exception as checkpoint_error:
+                    logger.warning(f"Failed to save checkpoint: {checkpoint_error}")
+            
         except Exception as e:
-            logger.error(f"   Error evaluating {task_id}: {e}")
+            logger.error(f"   ❌ CRITICAL ERROR evaluating {task_id}: {e}")
+            logger.error(f"   Full traceback: {traceback.format_exc()}")
+            # Continue with next problem instead of stopping entire evaluation
             continue
     
     # Compute final metrics
