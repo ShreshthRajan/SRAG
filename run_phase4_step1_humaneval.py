@@ -562,11 +562,17 @@ def evaluate_model_on_humaneval(
                     logger.debug(f"   Running HumanEval execution for solution {j+1}...")
                     exec_start = time.time()
                     
+                    # Use correct HumanEval API format
+                    problem_dict = {
+                        "task_id": task_id,
+                        "prompt": problem["prompt"], 
+                        "test": problem["test"],
+                        "entry_point": problem["entry_point"]
+                    }
                     correctness_result = check_correctness(
-                        task_id, 
-                        full_code, 
-                        problem["test"],
-                        timeout=15.0  # Increased timeout
+                        problem_dict, 
+                        code,  # Just the generated code, not full_code
+                        timeout=15.0
                     )
                     
                     exec_time = time.time() - exec_start
