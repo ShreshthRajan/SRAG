@@ -220,12 +220,15 @@ log_ts "🏁 DEPLOYMENT COMPLETE"
         """Deploy bulletproof training to ML Foundry."""
         logger.info("🚀 Deploying bulletproof training to ML Foundry...")
         
-        # Region configurations - using yesterday's working regions
+        # Region configurations - all must have explicit regions
         region_configs = [
-            {"region": "us-central1-a", "bid_price": 32.0},  # Working region from yesterday
-            {"region": "us-central1-b", "bid_price": 32.0},  # Backup central region
-            {"region": "eu-central1-b", "bid_price": 33.0},  # European fallback
-            {"bid_price": 35.0}  # Auto-region as last resort
+            {"region": "us-central1-a", "bid_price": 32.0},
+            {"region": "us-central1-b", "bid_price": 32.0},
+            {"region": "us-east1-b", "bid_price": 32.0},
+            {"region": "us-west1-b", "bid_price": 33.0},
+            {"region": "eu-central1-b", "bid_price": 33.0},
+            {"region": "eu-west1-b", "bid_price": 34.0},
+            {"region": "asia-southeast1-b", "bid_price": 35.0}
         ]
         
         startup_script = self.create_bulletproof_startup_script()
@@ -254,8 +257,8 @@ log_ts "🏁 DEPLOYMENT COMPLETE"
                 }
             }
             
-            if "region" in config:
-                bid_payload["region"] = config["region"]
+            # Always set region (required by API)
+            bid_payload["region"] = config["region"]
             
             try:
                 response = requests.post(f"{self.base_url}/spot/bids", headers=self.headers, json=bid_payload)
