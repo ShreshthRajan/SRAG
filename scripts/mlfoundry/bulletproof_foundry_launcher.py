@@ -237,9 +237,12 @@ log_ts "🏁 DEPLOYMENT COMPLETE"
             logger.info(f"🌍 Attempting deployment {i+1}/{len(region_configs)} - Region: {region_name}, Bid: ${bid_price}")
             
             # Create spot bid payload (fixed API format)
+            # Allow custom bid name from subclass
+            bid_name = getattr(self, '_bid_name_prefix', f"sragv-phase4-humaneval-{int(time.time())}")
+
             bid_payload = {
                 "project": self.project_id,
-                "name": f"sragv-phase4-humaneval-{int(time.time())}",
+                "name": bid_name,
                 "limit_price": f"${bid_price:.2f}",
                 "instance_quantity": 1,
                 "instance_type": "it_fK7Cx6TVhOK5ZfXT",  # 4×A100 instance type (singular)

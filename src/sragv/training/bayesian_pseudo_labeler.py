@@ -25,6 +25,7 @@ class BayesianPseudoLabeler:
     - Confidence calibration integration
     """
     
+    
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         default_config = self._create_default_config()
         if config:

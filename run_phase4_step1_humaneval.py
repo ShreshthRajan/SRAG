@@ -24,6 +24,7 @@ import torch
 import gc
 import numpy as np
 import math
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional
@@ -97,8 +98,16 @@ def signal_handler(signum, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
+# Parse command line arguments for calibration control
+parser = argparse.ArgumentParser(description='Phase 4 Step 1: HumanEval Evaluation')
+parser.add_argument('--no-calibration', action='store_true',
+                    help='Disable calibration to test raw model performance')
+parser.add_argument('--phase1-only', action='store_true',
+                    help='Only evaluate Phase 1 (skip Phase 3)')
+args = parser.parse_args()
 
-def run_phase4_step1_evaluation():
+
+def run_phase4_step1_evaluation(use_calibration=True, evaluate_phase3=True):
     """Main evaluation function: Load Phase 1 & Phase 3 models + HumanEval evaluation."""
     
     start_time = time.time()
@@ -147,116 +156,136 @@ def run_phase4_step1_evaluation():
         }
         logger.info(f"✅ Stage 1 complete ({time.time() - stage_start:.1f}s)")
         
-        # ===============================================================  
-        # STAGE 2: LOAD PHASE 1 CALIBRATOR (ECE 0.0003) - EXACT SAME
+        # ===============================================================
+        # STAGE 2: LOAD PHASE 1 CALIBRATOR (ECE 0.0003) - CONDITIONAL
         # ===============================================================
         logger.info("🎯 Stage 2: Loading Phase 1 Calibrator (ECE 0.0003)")
         stage_start = time.time()
-        
-        # Load the exceptional ECE 0.0003 calibrator (EXACT SAME paths)
-        calibrator_paths = [
-            "checkpoints/phase1_star_calibrator_1754272154.pt",  # ECE 0.0003 version
-            "checkpoints/phase1_star_calibrator_latest.pt",
-            "checkpoints/phase1_star_calibrator_enhanced.pt"
-        ]
-        
-        calibrator_loaded = False
-        for path in calibrator_paths:
-            if Path(path).exists():
-                try:
-                    logger.info(f"Loading Phase 1 calibrator from: {path}")
-                    checkpoint = torch.load(path, map_location='cpu', weights_only=False)
-                    
-                    if 'state_dict' in checkpoint:
-                        # Initialize and load the calibrator
-                        calibrator_phase1 = EnhancedConfidenceCalibrator()
-                        calibrator_phase1.load_state_dict(checkpoint['state_dict'])
-                        calibrator_phase1.is_trained = checkpoint.get('is_trained', True)
-                        
-                        # Assign to Phase 1 solution generator
-                        solution_generator_phase1.confidence_calibrator = calibrator_phase1
-                        solution_generator_phase1.use_calibration = True
-                        
-                        logger.info(f"✅ Phase 1 calibrator loaded successfully")
-                        logger.info(f"✅ Phase 1 temperature: {float(calibrator_phase1.temperature):.6f}")
-                        logger.info(f"✅ Phase 1 is_trained: {calibrator_phase1.is_trained}")
-                        calibrator_loaded = True
-                        break
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to load Phase 1 calibrator from {path}: {e}")
-                    continue
-        
-        if not calibrator_loaded:
-            raise Exception("Could not load Phase 1 calibrator - evaluation requires baseline")
-        
-        results["stages"]["phase1_calibrator_loading"] = {
-            "status": "completed", 
-            "duration": time.time() - stage_start,
-            "calibrator_loaded": True,
-            "baseline_ece": 0.0003
-        }
-        logger.info(f"✅ Stage 2 complete ({time.time() - stage_start:.1f}s)")
+
+        if use_calibration:
+            # Load the exceptional ECE 0.0003 calibrator (EXACT SAME paths)
+            calibrator_paths = [
+                "checkpoints/phase1_star_calibrator_1754272154.pt",  # ECE 0.0003 version
+                "checkpoints/phase1_star_calibrator_latest.pt",
+                "checkpoints/phase1_star_calibrator_enhanced.pt"
+            ]
+
+            calibrator_loaded = False
+            for path in calibrator_paths:
+                if Path(path).exists():
+                    try:
+                        logger.info(f"Loading Phase 1 calibrator from: {path}")
+                        checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+
+                        if 'state_dict' in checkpoint:
+                            # Initialize and load the calibrator
+                            calibrator_phase1 = EnhancedConfidenceCalibrator()
+                            calibrator_phase1.load_state_dict(checkpoint['state_dict'])
+                            calibrator_phase1.is_trained = checkpoint.get('is_trained', True)
+
+                            # Assign to Phase 1 solution generator
+                            solution_generator_phase1.confidence_calibrator = calibrator_phase1
+                            solution_generator_phase1.use_calibration = True
+
+                            logger.info(f"✅ Phase 1 calibrator loaded successfully")
+                            logger.info(f"✅ Phase 1 temperature: {float(calibrator_phase1.temperature):.6f}")
+                            logger.info(f"✅ Phase 1 is_trained: {calibrator_phase1.is_trained}")
+                            calibrator_loaded = True
+                            break
+
+                    except Exception as e:
+                        logger.warning(f"Failed to load Phase 1 calibrator from {path}: {e}")
+                        continue
+
+            if not calibrator_loaded:
+                raise Exception("Could not load Phase 1 calibrator - evaluation requires baseline")
+
+            results["stages"]["phase1_calibrator_loading"] = {
+                "status": "completed",
+                "duration": time.time() - stage_start,
+                "calibrator_loaded": True,
+                "baseline_ece": 0.0003
+            }
+            logger.info(f"✅ Stage 2 complete ({time.time() - stage_start:.1f}s)")
+        else:
+            # No calibration mode - use raw model confidence
+            logger.info("⚠️ CALIBRATION DISABLED - Using raw model confidence scores")
+            solution_generator_phase1.use_calibration = False
+
+            results["stages"]["phase1_calibrator_loading"] = {
+                "status": "skipped",
+                "duration": time.time() - stage_start,
+                "calibrator_loaded": False,
+                "mode": "raw_model"
+            }
+            logger.info(f"✅ Stage 2 complete (no calibration mode) ({time.time() - stage_start:.1f}s)")
         
         # ===============================================================
-        # STAGE 3: LOAD PHASE 3 CALIBRATOR (432 pseudo-labels)
+        # STAGE 3: LOAD PHASE 3 CALIBRATOR (432 pseudo-labels) - CONDITIONAL
         # ===============================================================
-        logger.info("🌟 Stage 3: Loading Phase 3 Calibrator (432 pseudo-labels)")
-        stage_start = time.time()
-        
-        # Load Phase 3 trained calibrator (EXACT SAME path as working)
-        phase3_calibrator_paths = [
-            "checkpoints/phase3_star_training/phase3_final_calibrator_1754491530.pt",
-            "checkpoints/phase3_star_training/phase3_final_calibrator_latest.pt"
-        ]
-        
-        phase3_calibrator_loaded = False
-        pseudo_labels_used = 432  # default
-        
-        for path in phase3_calibrator_paths:
-            if Path(path).exists():
-                try:
-                    logger.info(f"Loading Phase 3 calibrator from: {path}")
-                    phase3_checkpoint = torch.load(path, map_location='cpu', weights_only=False)
-                    
-                    if 'state_dict' in phase3_checkpoint:
-                        # Initialize and load the Phase 3 calibrator
-                        calibrator_phase3 = EnhancedConfidenceCalibrator()
-                        calibrator_phase3.load_state_dict(phase3_checkpoint['state_dict'])
-                        calibrator_phase3.is_trained = True  # CRITICAL FIX
-                        
-                        # Assign to Phase 3 solution generator
-                        solution_generator_phase3.confidence_calibrator = calibrator_phase3
-                        solution_generator_phase3.use_calibration = True
-                        
-                        pseudo_labels_used = phase3_checkpoint.get('pseudo_labels_used', 432)
-                        iterations = phase3_checkpoint.get('iterations', 6)
-                        best_ece = phase3_checkpoint.get('best_ece', 0.635)
-                        
-                        logger.info(f"✅ Phase 3 calibrator loaded successfully")
-                        logger.info(f"✅ Phase 3 temperature: {float(calibrator_phase3.temperature):.6f}")
-                        logger.info(f"✅ Phase 3 pseudo-labels: {pseudo_labels_used}")
-                        logger.info(f"✅ Phase 3 iterations: {iterations}")
-                        logger.info(f"✅ Phase 3 best ECE: {best_ece:.6f}")
-                        logger.info(f"✅ Phase 3 is_trained: {calibrator_phase3.is_trained}")
-                        phase3_calibrator_loaded = True
-                        break
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to load Phase 3 calibrator from {path}: {e}")
-                    continue
-        
-        if not phase3_calibrator_loaded:
-            raise Exception("Could not load Phase 3 calibrator - evaluation requires trained model")
-        
-        results["stages"]["phase3_calibrator_loading"] = {
-            "status": "completed", 
-            "duration": time.time() - stage_start,
-            "calibrator_loaded": True,
-            "pseudo_labels_used": pseudo_labels_used,
-            "expected_ece": 0.635
-        }
-        logger.info(f"✅ Stage 3 complete ({time.time() - stage_start:.1f}s)")
+        if evaluate_phase3:
+            logger.info("🌟 Stage 3: Loading Phase 3 Calibrator (432 pseudo-labels)")
+        else:
+            logger.info("⚠️ Stage 3: SKIPPED (phase1-only mode)")
+            results["stages"]["phase3_calibrator_loading"] = {"status": "skipped"}
+            results["stages"]["phase3_evaluation"] = {"status": "skipped"}
+
+        if evaluate_phase3:
+            stage_start = time.time()
+
+            # Load Phase 3 trained calibrator (EXACT SAME path as working)
+            phase3_calibrator_paths = [
+                "checkpoints/phase3_star_training/phase3_final_calibrator_1754491530.pt",
+                "checkpoints/phase3_star_training/phase3_final_calibrator_latest.pt"
+            ]
+
+            phase3_calibrator_loaded = False
+            pseudo_labels_used = 432  # default
+
+            for path in phase3_calibrator_paths:
+                if Path(path).exists():
+                    try:
+                        logger.info(f"Loading Phase 3 calibrator from: {path}")
+                        phase3_checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+
+                        if 'state_dict' in phase3_checkpoint:
+                            # Initialize and load the Phase 3 calibrator
+                            calibrator_phase3 = EnhancedConfidenceCalibrator()
+                            calibrator_phase3.load_state_dict(phase3_checkpoint['state_dict'])
+                            calibrator_phase3.is_trained = True  # CRITICAL FIX
+
+                            # Assign to Phase 3 solution generator
+                            solution_generator_phase3.confidence_calibrator = calibrator_phase3
+                            solution_generator_phase3.use_calibration = True
+
+                            pseudo_labels_used = phase3_checkpoint.get('pseudo_labels_used', 432)
+                            iterations = phase3_checkpoint.get('iterations', 6)
+                            best_ece = phase3_checkpoint.get('best_ece', 0.635)
+
+                            logger.info(f"✅ Phase 3 calibrator loaded successfully")
+                            logger.info(f"✅ Phase 3 temperature: {float(calibrator_phase3.temperature):.6f}")
+                            logger.info(f"✅ Phase 3 pseudo-labels: {pseudo_labels_used}")
+                            logger.info(f"✅ Phase 3 iterations: {iterations}")
+                            logger.info(f"✅ Phase 3 best ECE: {best_ece:.6f}")
+                            logger.info(f"✅ Phase 3 is_trained: {calibrator_phase3.is_trained}")
+                            phase3_calibrator_loaded = True
+                            break
+
+                    except Exception as e:
+                        logger.warning(f"Failed to load Phase 3 calibrator from {path}: {e}")
+                        continue
+
+            if not phase3_calibrator_loaded:
+                raise Exception("Could not load Phase 3 calibrator - evaluation requires trained model")
+
+            results["stages"]["phase3_calibrator_loading"] = {
+                "status": "completed",
+                "duration": time.time() - stage_start,
+                "calibrator_loaded": True,
+                "pseudo_labels_used": pseudo_labels_used,
+                "expected_ece": 0.635
+            }
+            logger.info(f"✅ Stage 3 complete ({time.time() - stage_start:.1f}s)")
         
         # ===============================================================
         # STAGE 4: LOAD HUMANEVAL DATASET
@@ -311,46 +340,57 @@ def run_phase4_step1_evaluation():
         logger.info(f"✅ Phase 1 Avg Confidence: {phase1_results['metrics']['avg_confidence']:.3f}")
         
         # ===============================================================
-        # STAGE 6: PHASE 3 MODEL EVALUATION ON HUMANEVAL
-        # =============================================================== 
-        logger.info("🌟 Stage 6: Phase 3 Trained Model Evaluation")
-        logger.info(f"Evaluating Phase 3 ({pseudo_labels_used} pseudo-labels) on HumanEval...")
-        stage_start = time.time()
-        
-        phase3_results = evaluate_model_on_humaneval(
-            model_name="phase3_trained",
-            orchestrator=orchestrator_phase3,
-            humaneval_problems=problem_list,
-            num_solutions=5
-        )
-        
-        stage_duration = time.time() - stage_start
-        results["stages"]["phase3_evaluation"] = {
-            "status": "completed",
-            "duration": stage_duration,
-            "results": phase3_results
-        }
-        
-        logger.info(f"✅ Stage 6 complete ({stage_duration/60:.1f} min)")
-        logger.info(f"✅ Phase 3 Pass@1: {phase3_results['metrics']['pass_at_1']:.3f}")
-        logger.info(f"✅ Phase 3 ECE: {phase3_results['metrics']['ece']:.6f}")
-        logger.info(f"✅ Phase 3 Avg Confidence: {phase3_results['metrics']['avg_confidence']:.3f}")
+        # STAGE 6: PHASE 3 MODEL EVALUATION ON HUMANEVAL - CONDITIONAL
+        # ===============================================================
+        if evaluate_phase3:
+            logger.info("🌟 Stage 6: Phase 3 Trained Model Evaluation")
+            logger.info(f"Evaluating Phase 3 ({pseudo_labels_used} pseudo-labels) on HumanEval...")
+            stage_start = time.time()
+
+            phase3_results = evaluate_model_on_humaneval(
+                model_name="phase3_trained",
+                orchestrator=orchestrator_phase3,
+                humaneval_problems=problem_list,
+                num_solutions=5
+            )
+
+            stage_duration = time.time() - stage_start
+            results["stages"]["phase3_evaluation"] = {
+                "status": "completed",
+                "duration": stage_duration,
+                "results": phase3_results
+            }
+
+            logger.info(f"✅ Stage 6 complete ({stage_duration/60:.1f} min)")
+            logger.info(f"✅ Phase 3 Pass@1: {phase3_results['metrics']['pass_at_1']:.3f}")
+            logger.info(f"✅ Phase 3 ECE: {phase3_results['metrics']['ece']:.6f}")
+            logger.info(f"✅ Phase 3 Avg Confidence: {phase3_results['metrics']['avg_confidence']:.3f}")
+        else:
+            # Phase 1 only mode - create dummy Phase 3 results for analysis compatibility
+            phase3_results = None
+            pseudo_labels_used = 0
         
         # ===============================================================
-        # STAGE 7: COMPARATIVE ANALYSIS AND STATISTICAL VALIDATION
+        # STAGE 7: COMPARATIVE ANALYSIS AND STATISTICAL VALIDATION - CONDITIONAL
         # ===============================================================
-        logger.info("📊 Stage 7: Comparative Analysis & Statistical Validation")
-        stage_start = time.time()
-        
-        # Perform comparative analysis
-        comparative_analysis = perform_comparative_analysis(
-            phase1_results, phase3_results, pseudo_labels_used
-        )
-        
-        # Statistical validation
-        statistical_validation = perform_statistical_validation(
-            phase1_results, phase3_results
-        )
+        if evaluate_phase3 and phase3_results is not None:
+            logger.info("📊 Stage 7: Comparative Analysis & Statistical Validation")
+            stage_start = time.time()
+
+            # Perform comparative analysis
+            comparative_analysis = perform_comparative_analysis(
+                phase1_results, phase3_results, pseudo_labels_used
+            )
+
+            # Statistical validation
+            statistical_validation = perform_statistical_validation(
+                phase1_results, phase3_results
+            )
+        else:
+            # Phase 1 only - no comparison needed
+            logger.info("⚠️ Stage 7: SKIPPED (phase1-only mode)")
+            comparative_analysis = {"mode": "phase1_only"}
+            statistical_validation = {"mode": "phase1_only"}
         
         results["comparative_analysis"] = comparative_analysis
         results["statistical_validation"] = statistical_validation
@@ -822,15 +862,26 @@ def perform_statistical_validation(phase1_results: Dict, phase3_results: Dict) -
 
 
 def main():
-    """Main execution function (SAME as working Phase 1-3)."""
-    logger.info("🚀 Starting Phase 4 Step 1: HumanEval Evaluation")
-    logger.info("Approach: Phase 1 vs Phase 3 performance validation")
-    
+    """Main execution function with argument support."""
+    use_calibration = not args.no_calibration
+    evaluate_phase3 = not args.phase1_only
+
+    if args.no_calibration:
+        logger.info("🚀 Starting Phase 4 Step 1: RAW MODEL Evaluation (No Calibration)")
+    elif args.phase1_only:
+        logger.info("🚀 Starting Phase 4 Step 1: Phase 1 ONLY Evaluation")
+    else:
+        logger.info("🚀 Starting Phase 4 Step 1: HumanEval Evaluation")
+        logger.info("Approach: Phase 1 vs Phase 3 performance validation")
+
     try:
-        results = run_phase4_step1_evaluation()
+        results = run_phase4_step1_evaluation(
+            use_calibration=use_calibration,
+            evaluate_phase3=evaluate_phase3
+        )
         logger.info("🎉 Evaluation completed successfully!")
         return results
-        
+
     except KeyboardInterrupt:
         logger.info("🛑 Evaluation interrupted by user")
         sys.exit(0)
