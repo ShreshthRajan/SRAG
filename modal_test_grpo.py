@@ -27,10 +27,10 @@ image = (
     )
 )
 
-# Define GPU requirements - single A100 for test
+# Define GPU requirements - single A100-80GB for test
 @app.function(
     image=image,
-    gpu="A100",  # Single A100 (updated syntax)
+    gpu="A100-80GB",  # 80GB A100 for 4-model architecture
     timeout=3600,  # 1 hour timeout for test
 )
 def run_grpo_test():
