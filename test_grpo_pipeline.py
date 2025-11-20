@@ -87,17 +87,8 @@ def test_grpo_pipeline():
         logger.error(f"❌ Orchestrator initialization failed: {e}")
         return False
 
-    # Step 3: Initialize reward system
-    logger.info("Step 3: Setting up execution-based rewards...")
-    try:
-        reward_system = RoleConditionedRewardSystem()
-        logger.info("✅ Reward system initialized")
-    except Exception as e:
-        logger.error(f"❌ Reward system initialization failed: {e}")
-        return False
-
-    # Step 4: Initialize GRPO trainer
-    logger.info("Step 4: Initializing SelfPlayTrainer with GRPO...")
+    # Step 3: Initialize GRPO trainer (reward system created internally)
+    logger.info("Step 3: Initializing SelfPlayTrainer with GRPO...")
     try:
         self_play_config = SelfPlayConfig(
             num_iterations=3,  # Just 3 iterations for test
@@ -106,9 +97,8 @@ def test_grpo_pipeline():
         )
 
         trainer = SelfPlayTrainer(
-            config=self_play_config,
             orchestrator=orchestrator,
-            reward_system=reward_system
+            config=self_play_config
         )
         logger.info("✅ SelfPlayTrainer initialized")
         logger.info(f"   GRPO trainer: {trainer.grpo_trainer is not None}")
