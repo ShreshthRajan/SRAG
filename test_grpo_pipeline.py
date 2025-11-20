@@ -109,19 +109,20 @@ def test_grpo_pipeline():
         traceback.print_exc()
         return False
 
-    # Step 5: Test single training step
-    logger.info("Step 5: Testing single GRPO training step...")
+    # Step 5: Test GRPO training
+    logger.info("Step 5: Running self-play training with GRPO...")
     try:
-        # This will generate solutions, compute rewards, update via GRPO
-        iteration_result = trainer.run_iteration(iteration=1)
+        # This will run full self-play training (3 iterations)
+        training_results = trainer.run_self_play_training()
 
-        logger.info("✅ GRPO training step successful!")
-        logger.info(f"   Solutions generated: {iteration_result.solutions_generated}")
-        logger.info(f"   Avg quality: {iteration_result.avg_solution_quality:.3f}")
+        logger.info("✅ GRPO training completed successfully!")
+        logger.info(f"   Status: {training_results.get('status', 'unknown')}")
+        logger.info(f"   Total iterations: {training_results.get('total_iterations', 0)}")
 
-        # Check if model was actually updated
-        logger.info("   Checking training results...")
-        logger.info(f"   ✅ Training iteration completed successfully")
+        if 'iteration_metrics' in training_results:
+            logger.info(f"   Final iteration metrics available: {len(training_results['iteration_metrics'])} iterations")
+
+        logger.info(f"   ✅ Training completed successfully")
 
     except Exception as e:
         logger.error(f"❌ Training step failed: {e}")
