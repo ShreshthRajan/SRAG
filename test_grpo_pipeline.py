@@ -41,6 +41,10 @@ def test_grpo_pipeline():
     # Create minimal config for testing
     test_config = {
         'sragv': {
+            'dataset': {
+                'cache_dir': '.cache',
+                'max_problems': 10  # Small test set
+            },
             'models': {
                 'problem_generator': {
                     'name': 'Qwen/Qwen2.5-1.5B-Instruct',
