@@ -29,10 +29,9 @@ image = (
 )
 
 # Mount local source code
-srag_mount = modal.Mount.from_local_dir(
-    str(Path(__file__).parent),
-    remote_path="/workspace/srag"
-)
+import os
+local_dir = os.path.dirname(os.path.abspath(__file__))
+srag_mount = modal.Mount(add_local_dir=local_dir, remote_path="/workspace/srag")
 
 # Define GPU requirements
 @app.function(
