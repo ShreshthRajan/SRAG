@@ -7,7 +7,7 @@ Streams output in real-time instead of buffering.
 import modal
 import os
 
-app = modal.App("srag-grpo-test-v5-fixed")
+app = modal.App("srag-grpo-final-test")
 
 local_dir = os.path.dirname(os.path.abspath(__file__))
 
