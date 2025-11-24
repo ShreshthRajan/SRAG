@@ -208,14 +208,23 @@ class GRPOTrainer:
             logger.warning(f"No reward function found for role {role}, using default")
             return 0.0
         
-        base_reward = reward_fn(output, context)
-        
+        base_reward_metrics = reward_fn(output, context)
+
+        # Extract final_reward float from RewardMetrics object
+        if isinstance(base_reward_metrics, float):
+            base_reward = base_reward_metrics
+        elif hasattr(base_reward_metrics, 'final_reward'):
+            base_reward = base_reward_metrics.final_reward
+        else:
+            logger.error(f"Invalid reward type: {type(base_reward_metrics)}")
+            base_reward = 0.0
+
         # Apply role multiplier
         role_multiplier = self.config.role_multipliers.get(role, 1.0)
-        
+
         # Compute role-specific bonus
         role_bonus = self._compute_role_bonus(output, role, context)
-        
+
         final_reward = base_reward * role_multiplier + role_bonus
         
         logger.debug(f"Role reward for {role}: base={base_reward:.3f}, "

@@ -377,14 +377,18 @@ Your task is to generate high-quality test cases that effectively distinguish be
             logger.error(f"Error building examples_section: {e}, examples type: {type(examples)}")
             examples_section = ''
 
+        # Escape braces in problem text to prevent f-string format errors
+        problem_title_escaped = problem_title.replace('{', '{{').replace('}', '}}')
+        problem_desc_escaped = problem_desc.replace('{', '{{').replace('}', '}}')
+
         # Log all variables before f-string construction
         logger.debug(f"Building user_message with: problem_title len={len(problem_title)}, "
                     f"problem_desc len={len(problem_desc)}, num_solutions={len(solutions)}")
 
         user_message = f"""Generate comprehensive test cases for the following coding problem:
 
-**Problem: {problem_title}**
-Description: {problem_desc}
+**Problem: {problem_title_escaped}**
+Description: {problem_desc_escaped}
 
 {function_sig_section}
 {examples_section}
