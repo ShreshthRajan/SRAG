@@ -948,8 +948,13 @@ class SelfPlayTrainer:
             return iteration_result
             
         except Exception as e:
+            import traceback
             logger.error(f"Error in iteration {iteration}: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
             iteration_result["error"] = str(e)
+            iteration_result["error_type"] = type(e).__name__
+            iteration_result["error_traceback"] = traceback.format_exc()
             iteration_result["processing_time"] = time.time() - iteration_start
             return iteration_result
     

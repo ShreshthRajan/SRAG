@@ -307,10 +307,30 @@ class GRPOTrainer:
             
             # Compute rewards for the group
             group_rewards = []
-            for output in group_outputs:
-                reward_metrics = self.compute_role_conditioned_reward(output, role, context)
-                # Extract final_reward float from RewardMetrics object
-                group_rewards.append(reward_metrics.final_reward)
+            for idx, output in enumerate(group_outputs):
+                try:
+                    logger.debug(f"Computing reward for output {idx+1}/{len(group_outputs)}, role={role}")
+                    reward_metrics = self.compute_role_conditioned_reward(output, role, context)
+                    logger.debug(f"Reward computed: type={type(reward_metrics)}, "
+                               f"has_final_reward={hasattr(reward_metrics, 'final_reward')}")
+
+                    # Extract final_reward float from RewardMetrics object
+                    if hasattr(reward_metrics, 'final_reward'):
+                        reward_value = reward_metrics.final_reward
+                    else:
+                        logger.error(f"RewardMetrics missing final_reward attribute! Type: {type(reward_metrics)}, "
+                                   f"Dir: {dir(reward_metrics)}")
+                        reward_value = 0.0
+
+                    logger.debug(f"Extracted reward value: {reward_value} (type: {type(reward_value)})")
+                    group_rewards.append(reward_value)
+
+                except Exception as e:
+                    import traceback
+                    logger.error(f"Error computing reward for output {idx+1}: {e}")
+                    logger.error(f"Exception type: {type(e).__name__}")
+                    logger.error(f"Full traceback:\n{traceback.format_exc()}")
+                    group_rewards.append(0.0)  # Fallback to 0
             
             # Store group data
             all_outputs.extend(group_outputs)

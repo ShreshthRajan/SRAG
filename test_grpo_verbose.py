@@ -70,9 +70,18 @@ def test_grpo_pipeline():
         yaml.dump(test_config, f)
     log("✅ Config created")
 
-    # Step 2: Import modules
+    # Step 2: Import modules and configure logging
     log("\n[2/5] Importing SRAG modules...")
     try:
+        import logging
+        # Set DEBUG level for comprehensive RCA
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            force=True
+        )
+        log("✅ Logging configured at DEBUG level")
+
         from sragv.orchestrator import SRAGVOrchestrator
         from sragv.training.self_play_trainer import SelfPlayTrainer, SelfPlayConfig
         log("✅ Imports successful")

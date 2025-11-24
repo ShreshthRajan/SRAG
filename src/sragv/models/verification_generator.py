@@ -362,9 +362,24 @@ Your task is to generate high-quality test cases that effectively distinguish be
         solution_analysis = self._analyze_solution_patterns(solutions)
         
         # Create user message with few-shot examples and structured guidance
-        # Build optional sections
-        function_sig_section = f'Function Signature: {function_sig}' if function_sig else ''
-        examples_section = f'Examples: {examples}' if examples else ''
+        # Build optional sections with detailed logging
+        try:
+            function_sig_section = f'Function Signature: {function_sig}' if function_sig else ''
+            logger.debug(f"Built function_sig_section: {len(function_sig_section)} chars")
+        except Exception as e:
+            logger.error(f"Error building function_sig_section: {e}, function_sig type: {type(function_sig)}")
+            function_sig_section = ''
+
+        try:
+            examples_section = f'Examples: {examples}' if examples else ''
+            logger.debug(f"Built examples_section: {len(examples_section)} chars")
+        except Exception as e:
+            logger.error(f"Error building examples_section: {e}, examples type: {type(examples)}")
+            examples_section = ''
+
+        # Log all variables before f-string construction
+        logger.debug(f"Building user_message with: problem_title len={len(problem_title)}, "
+                    f"problem_desc len={len(problem_desc)}, num_solutions={len(solutions)}")
 
         user_message = f"""Generate comprehensive test cases for the following coding problem:
 
@@ -821,12 +836,18 @@ Focus on generating test cases that will expose bugs in incorrect implementation
         
         for attempt in range(max_retry_attempts):
             try:
+                # Log inputs for debugging
+                logger.debug(f"Attempt {attempt+1}: Calling process_input with problem_id={problem.get('problem_id', 'unknown')}, "
+                           f"num_solutions={len(solutions)}, has_traces={execution_traces is not None}")
+
                 # Create chat messages using proper Qwen2.5-1.5B-Instruct format
                 messages = self.process_input(
                     problem=problem,
                     solutions=solutions,
                     execution_traces=execution_traces
                 )
+
+                logger.debug(f"Attempt {attempt+1}: process_input returned {len(messages)} messages")
                 
                 # Apply progressive temperature strategy
                 current_temp = base_temp + (attempt * 0.1)
@@ -856,7 +877,10 @@ Focus on generating test cases that will expose bugs in incorrect implementation
                     logger.debug(f"⚠️ No output generated for attempt {attempt+1}")
                 
             except Exception as e:
-                logger.warning(f"❌ Error generating test cases, attempt {attempt+1}: {e}")
+                import traceback
+                logger.error(f"❌ Error generating test cases, attempt {attempt+1}: {e}")
+                logger.error(f"Exception type: {type(e).__name__}")
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
                 continue
         
         # If no test cases generated, use fallback
