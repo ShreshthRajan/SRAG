@@ -854,6 +854,9 @@ class SelfPlayTrainer:
                         solutions=problem_solutions,
                         test_cases=problem_tests
                     )
+                    # Handle both dict (with strategic_feedback) and list returns
+                    if isinstance(validation_results, dict):
+                        validation_results = validation_results.get('validated_test_cases', [])
                     all_validation_results.extend(validation_results)
             
             iteration_result["validation_results"] = all_validation_results

@@ -308,8 +308,9 @@ class GRPOTrainer:
             # Compute rewards for the group
             group_rewards = []
             for output in group_outputs:
-                reward = self.compute_role_conditioned_reward(output, role, context)
-                group_rewards.append(reward)
+                reward_metrics = self.compute_role_conditioned_reward(output, role, context)
+                # Extract final_reward float from RewardMetrics object
+                group_rewards.append(reward_metrics.final_reward)
             
             # Store group data
             all_outputs.extend(group_outputs)

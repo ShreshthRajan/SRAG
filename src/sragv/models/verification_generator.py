@@ -362,13 +362,17 @@ Your task is to generate high-quality test cases that effectively distinguish be
         solution_analysis = self._analyze_solution_patterns(solutions)
         
         # Create user message with few-shot examples and structured guidance
+        # Build optional sections
+        function_sig_section = f'Function Signature: {function_sig}' if function_sig else ''
+        examples_section = f'Examples: {examples}' if examples else ''
+
         user_message = f"""Generate comprehensive test cases for the following coding problem:
 
 **Problem: {problem_title}**
 Description: {problem_desc}
 
-{f'Function Signature: {function_sig}' if function_sig else ''}
-{f'Examples: {examples}' if examples else ''}
+{function_sig_section}
+{examples_section}
 
 **Solution Implementations Analysis:**
 - Total solutions: {len(solutions)}
