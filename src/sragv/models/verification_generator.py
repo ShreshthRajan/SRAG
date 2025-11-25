@@ -429,17 +429,17 @@ Test Cases:
 Now generate 8 comprehensive test cases for the given problem following this exact JSON format:
 
 ```json
-{
+{{
   "test_cases": [
-    {
+    {{
       "name": "Basic Functionality Test",
       "category": "basic",
       "input": [example_input],
       "expected": expected_output,
       "reasoning": "Tests core functionality with normal inputs"
-    }
+    }}
   ]
-}
+}}
 ```
 
 Categories to use: "basic", "edge", "boundary", "error", "performance", "corner", "type", "large"

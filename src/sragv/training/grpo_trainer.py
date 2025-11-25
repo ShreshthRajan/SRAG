@@ -210,10 +210,13 @@ class GRPOTrainer:
         
         base_reward_metrics = reward_fn(output, context)
 
-        # Extract final_reward float from RewardMetrics object
-        if isinstance(base_reward_metrics, float):
-            base_reward = base_reward_metrics
+        # Extract final_reward float from RewardMetrics object or use numeric value directly
+        import numpy as np
+        if isinstance(base_reward_metrics, (float, int, np.floating, np.integer)):
+            # Already a numeric value - use it directly
+            base_reward = float(base_reward_metrics)
         elif hasattr(base_reward_metrics, 'final_reward'):
+            # RewardMetrics object - extract final_reward
             base_reward = base_reward_metrics.final_reward
         else:
             logger.error(f"Invalid reward type: {type(base_reward_metrics)}")
@@ -316,30 +319,9 @@ class GRPOTrainer:
             
             # Compute rewards for the group
             group_rewards = []
-            for idx, output in enumerate(group_outputs):
-                try:
-                    logger.debug(f"Computing reward for output {idx+1}/{len(group_outputs)}, role={role}")
-                    reward_metrics = self.compute_role_conditioned_reward(output, role, context)
-                    logger.debug(f"Reward computed: type={type(reward_metrics)}, "
-                               f"has_final_reward={hasattr(reward_metrics, 'final_reward')}")
-
-                    # Extract final_reward float from RewardMetrics object
-                    if hasattr(reward_metrics, 'final_reward'):
-                        reward_value = reward_metrics.final_reward
-                    else:
-                        logger.error(f"RewardMetrics missing final_reward attribute! Type: {type(reward_metrics)}, "
-                                   f"Dir: {dir(reward_metrics)}")
-                        reward_value = 0.0
-
-                    logger.debug(f"Extracted reward value: {reward_value} (type: {type(reward_value)})")
-                    group_rewards.append(reward_value)
-
-                except Exception as e:
-                    import traceback
-                    logger.error(f"Error computing reward for output {idx+1}: {e}")
-                    logger.error(f"Exception type: {type(e).__name__}")
-                    logger.error(f"Full traceback:\n{traceback.format_exc()}")
-                    group_rewards.append(0.0)  # Fallback to 0
+            for output in group_outputs:
+                reward = self.compute_role_conditioned_reward(output, role, context)
+                group_rewards.append(reward)
             
             # Store group data
             all_outputs.extend(group_outputs)
@@ -372,8 +354,12 @@ class GRPOTrainer:
         for unique_role in set(all_roles):
             role_indices = [i for i, r in enumerate(all_roles) if r == unique_role]
             role_log_probs = torch.stack([all_log_probs[i] for i in role_indices])
-            role_advantages_tensor = torch.tensor([advantages[i] for i in role_indices])
-            
+            role_advantages_tensor = torch.tensor(
+                [advantages[i] for i in role_indices],
+                device=role_log_probs.device,  # Match device of log_probs
+                dtype=role_log_probs.dtype  # Match dtype for efficiency
+            )
+
             # GRPO loss: -mean(log_prob * advantage)
             role_loss = -(role_log_probs * role_advantages_tensor).mean()
             role_losses[unique_role] = role_loss
