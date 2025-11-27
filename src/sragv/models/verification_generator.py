@@ -668,14 +668,28 @@ Focus on generating test cases that will expose bugs in incorrect implementation
         return test_cases
     
     def _clean_json_string(self, json_str: str) -> str:
-        """Clean common JSON formatting issues."""
-        # Remove trailing commas
-        json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
-        # Fix unquoted keys
-        json_str = re.sub(r'(\w+):', r'"\1":', json_str)
-        # Fix single quotes
-        json_str = json_str.replace("'", '"')
-        return json_str
+        """Clean common JSON formatting issues without breaking valid JSON."""
+        try:
+            # Remove trailing commas before closing braces/brackets
+            json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+
+            # Fix single quotes to double quotes (but preserve escaped quotes)
+            json_str = json_str.replace("'", '"')
+
+            # Fix unquoted keys - only match keys that aren't already quoted
+            # Pattern: word followed by colon, NOT preceded by a quote
+            json_str = re.sub(r'(?<!")(\b\w+\b)(?!")(\s*):', r'"\1"\2:', json_str)
+
+            # Remove control characters that break JSON
+            json_str = ''.join(char for char in json_str if ord(char) >= 32 or char in '\n\r\t')
+
+            # Fix common typos
+            json_str = json_str.replace('True', 'true').replace('False', 'false').replace('None', 'null')
+
+            return json_str
+        except Exception as e:
+            logger.debug(f"JSON cleaning error: {e}")
+            return json_str
     
     def _extract_with_patterns(self, text: str, patterns: List[str]) -> Optional[str]:
         """Extract text using multiple regex patterns."""

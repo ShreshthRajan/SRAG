@@ -382,15 +382,15 @@ PROBLEM_TITLE:"""
         
         # Simple novelty based on problem type and description similarity
         problem_type = problem.get("problem_type", "")
-        problem_desc = problem.get("description", "")
-        
+        problem_desc = problem.get("description") or problem.get("question", "")
+
         type_overlap = sum(1 for p in archive if p.get("problem_type") == problem_type)
         type_novelty = max(0, 1 - (type_overlap / len(archive)))
-        
+
         # Simple text similarity (could be improved with embeddings)
         desc_similarities = []
         for p in archive:
-            archive_desc = p.get("description", "")
+            archive_desc = p.get("description") or p.get("question", "")
             # Jaccard similarity of words
             words1 = set(problem_desc.lower().split())
             words2 = set(archive_desc.lower().split())
@@ -458,8 +458,9 @@ PROBLEM_TITLE:"""
             
             if batch_problems:
                 problem = batch_problems[0]
-                # Add diversity metrics
-                problem["estimated_difficulty"] = self.estimate_difficulty(problem["description"])
+                # Add diversity metrics (handle both 'question' and 'description' field names)
+                problem_text = problem.get("description") or problem.get("question", "")
+                problem["estimated_difficulty"] = self.estimate_difficulty(problem_text)
                 problem["novelty_score"] = self.compute_novelty_score(problem, archive)
                 problems.append(problem)
         

@@ -300,7 +300,7 @@ class GRPOTrainer:
             group_log_probs = []
             
             for _ in range(self.config.group_size):
-                # Generate response
+                # Generate response (no grad for generation, but we'll recompute log_probs with grad)
                 with torch.no_grad():
                     outputs = player.generate_text(
                         prompt,
@@ -310,11 +310,12 @@ class GRPOTrainer:
                         num_return_sequences=1
                     )
                     output = outputs[0]
-                
-                # Compute log probabilities for the generated sequence
-                log_prob = self._compute_log_probability(player, prompt, output)
-                
+
                 group_outputs.append(output)
+
+            # Compute log probabilities WITH gradients enabled (outside no_grad context)
+            for output in group_outputs:
+                log_prob = self._compute_log_probability(player, prompt, output)
                 group_log_probs.append(log_prob)
             
             # Compute rewards for the group
@@ -420,12 +421,11 @@ class GRPOTrainer:
         
         # Get model
         model = player.get_training_model()
-        
-        # Compute logits
-        with torch.no_grad():
-            outputs = model(**full_inputs)
-            logits = outputs.logits
-        
+
+        # Compute logits WITH gradients (needed for GRPO backprop)
+        outputs = model(**full_inputs)
+        logits = outputs.logits
+
         # Extract output tokens (excluding prompt)
         prompt_length = inputs["input_ids"].shape[1]
         output_logits = logits[0, prompt_length-1:-1]  # Shift for next token prediction

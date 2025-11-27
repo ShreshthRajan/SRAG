@@ -14,12 +14,12 @@ sragv:
       top_p: 0.95
       
     solution_generator:
-      name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+      name: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
       max_length: 4096
       temperature: 0.8
       top_p: 0.95
       quantization: "4bit"
-      lora_rank: 32
+      lora_rank: 64
       
     verification_generator:
       name: "Qwen/Qwen2.5-1.5B-Instruct"
