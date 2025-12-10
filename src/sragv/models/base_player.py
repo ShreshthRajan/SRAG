@@ -38,7 +38,7 @@ class BasePlayer(ABC):
         max_length: int = 2048,
         temperature: float = 0.8,
         top_p: float = 0.95,
-        device: str = "auto",
+        device: Union[str, int] = "auto",
         quantization: Optional[str] = None,
         lora_config: Optional[Dict] = None
     ):
@@ -95,16 +95,17 @@ class BasePlayer(ABC):
             except (ImportError, AttributeError):
                 logger.warning(f"Quantization requested but bitsandbytes not available, loading in fp32")
         
-        # Load model
+        # Load model WITHOUT device_map (we'll move it explicitly after)
+        # device_map adds Accelerate hooks that prevent model movement
+        # Use fp16 for memory efficiency (2x reduction vs fp32) unless quantized
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             quantization_config=quantization_config,
-            device_map=self.device,
             trust_remote_code=True,
-            torch_dtype=torch.float16 if quantization_config else torch.float32,
+            torch_dtype=torch.float16,  # Always use fp16 for memory efficiency
             low_cpu_mem_usage=True
         )
-        
+
         # Setup LoRA if configured and available
         if self.lora_config and PEFT_AVAILABLE:
             logger.info("Setting up LoRA adapters...")
@@ -120,8 +121,28 @@ class BasePlayer(ABC):
             logger.info(f"LoRA setup complete. Trainable parameters: {self.peft_model.print_trainable_parameters()}")
         elif self.lora_config and not PEFT_AVAILABLE:
             logger.warning("LoRA configuration provided but PEFT not available. Using base model only.")
-        
-        logger.info(f"Model {self.model_name} loaded successfully")
+
+        # Move model to target device (standard PyTorch approach for multi-GPU)
+        # This must happen AFTER LoRA setup so both base model and adapters move together
+        target_device = None
+        if self.device != "auto":
+            target_device = f"cuda:{self.device}" if isinstance(self.device, int) else self.device
+            logger.info(f"Moving model to device: {target_device}")
+            if self.peft_model:
+                self.peft_model = self.peft_model.to(target_device)
+            else:
+                self.model = self.model.to(target_device)
+        elif torch.cuda.is_available():
+            # If device is "auto" and CUDA is available, use cuda:0
+            target_device = "cuda:0"
+            logger.info(f"Moving model to device: {target_device} (auto)")
+            if self.peft_model:
+                self.peft_model = self.peft_model.to(target_device)
+            else:
+                self.model = self.model.to(target_device)
+
+        final_device = target_device if target_device else "cpu"
+        logger.info(f"Model {self.model_name} loaded successfully on {final_device}")
     
     def generate_text(
         self,
@@ -176,12 +197,11 @@ class BasePlayer(ABC):
             max_length=self.max_length,
             padding=True
         )
-        
-        if torch.cuda.is_available():
-            inputs = {k: v.cuda() for k, v in inputs.items()}
-        
-        # Generate with improved parameters for stability
+
+        # Get model and move inputs to its device
         model_to_use = self.peft_model if self.peft_model else self.model
+        model_device = next(model_to_use.parameters()).device
+        inputs = {k: v.to(model_device) for k, v in inputs.items()}
         
         generation_kwargs = {
             **inputs,
@@ -271,7 +291,7 @@ class BasePlayer(ABC):
 
 class PlayerConfig:
     """Configuration class for players."""
-    
+
     def __init__(
         self,
         model_name: str,
@@ -282,14 +302,16 @@ class PlayerConfig:
         lora_rank: int = 32,
         lora_alpha: int = 64,
         lora_dropout: float = 0.1,
-        target_modules: Optional[List[str]] = None
+        target_modules: Optional[List[str]] = None,
+        device: Union[str, int] = "auto"
     ):
         self.model_name = model_name
         self.max_length = max_length
         self.temperature = temperature
         self.top_p = top_p
         self.quantization = quantization
-        
+        self.device = device
+
         # LoRA configuration
         self.lora_config = {
             "rank": lora_rank,
@@ -297,7 +319,7 @@ class PlayerConfig:
             "dropout": lora_dropout,
             "target_modules": target_modules or ["q_proj", "v_proj", "k_proj", "o_proj"]
         } if lora_rank > 0 else None
-    
+
     def to_dict(self) -> Dict:
         """Convert to dictionary."""
         return {
@@ -306,5 +328,6 @@ class PlayerConfig:
             "temperature": self.temperature,
             "top_p": self.top_p,
             "quantization": self.quantization,
-            "lora_config": self.lora_config
+            "lora_config": self.lora_config,
+            "device": self.device
         }

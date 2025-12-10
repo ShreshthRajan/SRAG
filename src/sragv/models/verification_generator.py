@@ -316,6 +316,7 @@ class VerificationGenerator(BasePlayer):
             max_length=config["max_length"],
             temperature=config["temperature"],
             top_p=config["top_p"],
+            device=config.get("device", "auto"),
             lora_config=config.get("lora_config")
         )
         

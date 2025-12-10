@@ -37,7 +37,7 @@ volume = modal.Volume.from_name("srag-results", create_if_missing=True)
 
 @app.function(
     image=image,
-    gpu="A100-80GB",
+    gpu="A100-80GB:2",  # 2×A100 = 160GB total (needed for 4-player GRPO with gradients)
     timeout=28800,  # 8 hours (pilot run)
     volumes={"/results": volume}
 )

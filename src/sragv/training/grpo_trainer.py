@@ -31,6 +31,7 @@ class GRPOConfig:
     learning_rate: float = 1e-5  # Conservative for stability
     kl_penalty: float = 0.0  # Often disabled in 2025 (GRPO-Zero approach)
     loss_aggregation: str = "token-mean"  # More stable than "seq-mean"
+    gradient_accumulation_steps: int = 4  # Process prompts in chunks, backward() frequently
     
     # Memory optimization (July 2025 best practices)
     use_gradient_checkpointing: bool = True
@@ -108,7 +109,21 @@ class GRPOTrainer:
         for player_name, player in self.players.items():
             # Get the training model (PEFT model if available)
             training_model = player.get_training_model()
-            
+
+            # Enable gradient checkpointing if configured (critical for memory efficiency)
+            if self.config.use_gradient_checkpointing:
+                if hasattr(training_model, 'gradient_checkpointing_enable'):
+                    training_model.gradient_checkpointing_enable()
+                    logger.info(f"✅ Gradient checkpointing enabled for {player_name}")
+                elif hasattr(training_model, 'enable_input_require_grads'):
+                    # For PEFT models, need to enable input gradients for checkpointing
+                    training_model.enable_input_require_grads()
+                    if hasattr(training_model.base_model, 'gradient_checkpointing_enable'):
+                        training_model.base_model.gradient_checkpointing_enable()
+                    logger.info(f"✅ Gradient checkpointing enabled for {player_name} (PEFT)")
+                else:
+                    logger.warning(f"Gradient checkpointing not available for {player_name}")
+
             # Setup optimizer with 8-bit optimization if configured
             if self.config.use_8bit_optimizer:
                 try:
@@ -269,142 +284,169 @@ class GRPOTrainer:
         return bonus
     
     def train_step(
-        self, 
-        prompts: List[str], 
+        self,
+        prompts: List[str],
         player_roles: List[str],
         contexts: List[Dict[str, Any]]
     ) -> Dict[str, float]:
         """
-        Execute a single GRPO training step.
-        
+        Execute a single GRPO training step with gradient accumulation for memory efficiency.
+
+        Processes prompts in chunks to reduce peak memory usage while maintaining
+        research-valid group_size=8 for advantage computation.
+
         Args:
             prompts: List of input prompts
             player_roles: Corresponding player roles for each prompt
             contexts: Additional context for each prompt
-            
+
         Returns:
             Training metrics dictionary
         """
         batch_size = len(prompts)
-        all_outputs = []
-        all_rewards = []
-        all_log_probs = []
-        all_roles = []
-        
-        # Generate group responses for each prompt
-        for prompt, role, context in zip(prompts, player_roles, contexts):
-            player = self.players[role]
-            
-            # Generate multiple responses (group sampling)
-            group_outputs = []
-            group_log_probs = []
-            
-            for _ in range(self.config.group_size):
-                # Generate response (no grad for generation, but we'll recompute log_probs with grad)
-                with torch.no_grad():
-                    outputs = player.generate_text(
-                        prompt,
-                        max_new_tokens=512,
-                        temperature=0.8,
-                        do_sample=True,
-                        num_return_sequences=1
-                    )
-                    output = outputs[0]
 
-                group_outputs.append(output)
+        # Calculate chunk size for gradient accumulation
+        chunk_size = max(1, batch_size // self.config.gradient_accumulation_steps)
+        num_chunks = (batch_size + chunk_size - 1) // chunk_size  # Ceiling division
 
-            # Compute log probabilities WITH gradients enabled (outside no_grad context)
-            for output in group_outputs:
-                log_prob = self._compute_log_probability(player, prompt, output)
-                group_log_probs.append(log_prob)
-            
-            # Compute rewards for the group
-            group_rewards = []
-            for output in group_outputs:
-                reward = self.compute_role_conditioned_reward(output, role, context)
-                group_rewards.append(reward)
-            
-            # Store group data
-            all_outputs.extend(group_outputs)
-            all_rewards.extend(group_rewards)
-            all_log_probs.extend(group_log_probs)
-            all_roles.extend([role] * self.config.group_size)
-        
-        # Compute group-relative advantages
-        # Group advantages by role for fair comparison
-        role_advantages = {}
-        for unique_role in set(all_roles):
-            role_indices = [i for i, r in enumerate(all_roles) if r == unique_role]
-            role_rewards = [all_rewards[i] for i in role_indices]
-            role_weights = [self.config.role_multipliers[unique_role]] * len(role_rewards)
-            
-            advantages = self.compute_group_advantages(role_rewards, role_weights)
-            role_advantages[unique_role] = advantages
-        
-        # Reconstruct advantages in original order
-        advantages = []
-        role_counters = {role: 0 for role in set(all_roles)}
-        for role in all_roles:
-            advantages.append(role_advantages[role][role_counters[role]])
-            role_counters[role] += 1
-        
-        # Compute policy loss using GRPO objective
+        # Zero gradients at start
+        for optimizer in self.optimizers.values():
+            optimizer.zero_grad()
+
+        all_role_losses = {role: [] for role in set(player_roles)}
+        total_samples_processed = 0
+
+        # Process prompts in chunks (gradient accumulation for memory efficiency)
+        for chunk_idx in range(num_chunks):
+            start_idx = chunk_idx * chunk_size
+            end_idx = min(start_idx + chunk_size, batch_size)
+
+            chunk_prompts = prompts[start_idx:end_idx]
+            chunk_roles = player_roles[start_idx:end_idx]
+            chunk_contexts = contexts[start_idx:end_idx]
+
+            chunk_outputs = []
+            chunk_rewards = []
+            chunk_log_probs = []
+            chunk_role_list = []
+
+            # Generate group responses for each prompt in this chunk
+            for prompt, role, context in zip(chunk_prompts, chunk_roles, chunk_contexts):
+                player = self.players[role]
+
+                # Generate multiple responses (group sampling)
+                group_outputs = []
+                group_log_probs = []
+
+                for _ in range(self.config.group_size):
+                    # Generate response (no grad for generation, but we'll recompute log_probs with grad)
+                    with torch.no_grad():
+                        outputs = player.generate_text(
+                            prompt,
+                            max_new_tokens=512,
+                            temperature=0.8,
+                            do_sample=True,
+                            num_return_sequences=1
+                        )
+                        output = outputs[0]
+
+                    group_outputs.append(output)
+
+                # Compute log probabilities WITH gradients enabled (outside no_grad context)
+                for output in group_outputs:
+                    log_prob = self._compute_log_probability(player, prompt, output)
+                    group_log_probs.append(log_prob)
+
+                # Compute rewards for the group
+                group_rewards = []
+                for output in group_outputs:
+                    reward = self.compute_role_conditioned_reward(output, role, context)
+                    group_rewards.append(reward)
+
+                # Store group data
+                chunk_outputs.extend(group_outputs)
+                chunk_rewards.extend(group_rewards)
+                chunk_log_probs.extend(group_log_probs)
+                chunk_role_list.extend([role] * self.config.group_size)
+
+            # Compute group-relative advantages for this chunk
+            role_advantages = {}
+            for unique_role in set(chunk_role_list):
+                role_indices = [i for i, r in enumerate(chunk_role_list) if r == unique_role]
+                role_rewards = [chunk_rewards[i] for i in role_indices]
+                role_weights = [self.config.role_multipliers[unique_role]] * len(role_rewards)
+
+                advantages = self.compute_group_advantages(role_rewards, role_weights)
+                role_advantages[unique_role] = advantages
+
+            # Reconstruct advantages in original order
+            chunk_advantages = []
+            role_counters = {role: 0 for role in set(chunk_role_list)}
+            for role in chunk_role_list:
+                chunk_advantages.append(role_advantages[role][role_counters[role]])
+                role_counters[role] += 1
+
+            # Compute policy loss using GRPO objective
+            # Backward each role separately to avoid cross-GPU tensor operations
+            for unique_role in set(chunk_role_list):
+                role_indices = [i for i, r in enumerate(chunk_role_list) if r == unique_role]
+                role_log_probs = torch.stack([chunk_log_probs[i] for i in role_indices])
+                role_advantages_tensor = torch.tensor(
+                    [chunk_advantages[i] for i in role_indices],
+                    device=role_log_probs.device,
+                    dtype=role_log_probs.dtype
+                )
+
+                # GRPO loss: -mean(log_prob * advantage)
+                role_loss = -(role_log_probs * role_advantages_tensor).mean()
+
+                # Store loss value (detached) for metrics
+                all_role_losses[unique_role].append(role_loss.item())
+
+                # Backward pass for this role (gradients accumulate across chunks)
+                # Scale loss by number of chunks to maintain effective learning rate
+                scaled_loss = role_loss / num_chunks
+                scaled_loss.backward()
+
+            total_samples_processed += len(chunk_prompts) * self.config.group_size
+
+        # After processing all chunks, update parameters
         total_loss = 0.0
         role_losses = {}
-        
-        for unique_role in set(all_roles):
-            role_indices = [i for i, r in enumerate(all_roles) if r == unique_role]
-            role_log_probs = torch.stack([all_log_probs[i] for i in role_indices])
-            role_advantages_tensor = torch.tensor(
-                [advantages[i] for i in role_indices],
-                device=role_log_probs.device,  # Match device of log_probs
-                dtype=role_log_probs.dtype  # Match dtype for efficiency
-            )
 
-            # GRPO loss: -mean(log_prob * advantage)
-            role_loss = -(role_log_probs * role_advantages_tensor).mean()
-            role_losses[unique_role] = role_loss
-            total_loss += role_loss
-        
-        # Backward pass and optimization
-        total_loss.backward()
-        
-        # Update each player's parameters
-        for role in set(all_roles):
+        for role in set(player_roles):
             optimizer = self.optimizers[role]
             scheduler = self.schedulers[role]
-            
+
             # Gradient clipping
             player = self.players[role]
             torch.nn.utils.clip_grad_norm_(player.get_training_model().parameters(), 1.0)
-            
-            # Optimizer step
+
+            # Optimizer step (gradients already accumulated from all chunks)
             optimizer.step()
             scheduler.step()
-            optimizer.zero_grad()
-        
+
+            # Compute average loss for this role across chunks
+            if all_role_losses[role]:
+                role_losses[role] = np.mean(all_role_losses[role])
+                total_loss += role_losses[role]
+
         # Compute metrics
         metrics = {
-            "total_loss": total_loss.item(),
-            "mean_reward": np.mean(all_rewards),
-            "std_reward": np.std(all_rewards),
-            "mean_advantage": np.mean(advantages),
+            "total_loss": total_loss,
+            "samples_processed": total_samples_processed,
+            "num_chunks": num_chunks,
+            "chunk_size": chunk_size,
             "global_step": self.global_step
         }
-        
-        # Add per-role metrics
-        for role in set(all_roles):
-            role_indices = [i for i, r in enumerate(all_roles) if r == role]
-            role_rewards = [all_rewards[i] for i in role_indices]
-            role_advs = [advantages[i] for i in role_indices]
-            
-            metrics[f"{role}_reward"] = np.mean(role_rewards)
-            metrics[f"{role}_advantage"] = np.mean(role_advs)
-            metrics[f"{role}_loss"] = role_losses[role].item()
-        
+
+        # Add per-role loss metrics
+        for role, loss_value in role_losses.items():
+            metrics[f"{role}_loss"] = loss_value
+
         self.global_step += 1
         self.training_history.append(metrics)
-        
+
         return metrics
     
     def _compute_log_probability(self, player, prompt: str, output: str) -> torch.Tensor:
@@ -413,14 +455,14 @@ class GRPOTrainer:
         full_text = prompt + output
         inputs = player.tokenizer(prompt, return_tensors="pt", truncation=True)
         full_inputs = player.tokenizer(full_text, return_tensors="pt", truncation=True)
-        
-        # Move to device
-        if torch.cuda.is_available():
-            inputs = {k: v.cuda() for k, v in inputs.items()}
-            full_inputs = {k: v.cuda() for k, v in full_inputs.items()}
-        
-        # Get model
+
+        # Get model first to determine its device
         model = player.get_training_model()
+        model_device = next(model.parameters()).device
+
+        # Move inputs to the same device as the model
+        inputs = {k: v.to(model_device) for k, v in inputs.items()}
+        full_inputs = {k: v.to(model_device) for k, v in full_inputs.items()}
 
         # Compute logits WITH gradients (needed for GRPO backprop)
         outputs = model(**full_inputs)

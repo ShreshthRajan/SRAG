@@ -92,7 +92,34 @@ class SRAGVOrchestrator:
     def initialize_players(self):
         """Initialize all 4 players with their configurations."""
         logger.info("Initializing 4-player architecture...")
-        
+
+        # Detect available GPUs and assign models strategically
+        num_gpus = torch.cuda.device_count()
+        logger.info(f"Detected {num_gpus} GPUs")
+
+        # Multi-GPU distribution strategy (for 2+ GPUs):
+        # GPU 0: Problem Generator (1.5B) + Verification Generator (1.5B) = 3B total
+        # GPU 1: Solution Generator (1.5B) + Meta-Verifier (0.5B) = 2B total
+        # Use integer device IDs (not "cuda:0" strings) for HuggingFace device_map
+        if num_gpus >= 2:
+            logger.info("Using multi-GPU distribution:")
+            logger.info("  GPU 0: Problem Generator + Verification Generator")
+            logger.info("  GPU 1: Solution Generator + Meta-Verifier")
+            device_assignments = {
+                'problem': 0,
+                'solution': 1,
+                'verification': 0,
+                'meta': 1
+            }
+        else:
+            logger.info("Single GPU mode - all models on GPU 0")
+            device_assignments = {
+                'problem': 0,
+                'solution': 0,
+                'verification': 0,
+                'meta': 0
+            }
+
         # Player 1: Problem Generator (1.5B)
         problem_config = PlayerConfig(
             model_name=self.config['models']['problem_generator']['name'],
@@ -100,21 +127,23 @@ class SRAGVOrchestrator:
             temperature=self.config['models']['problem_generator']['temperature'],
             top_p=self.config['models']['problem_generator']['top_p'],
             lora_rank=32,
-            lora_alpha=64
+            lora_alpha=64,
+            device=device_assignments['problem']
         )
         self.problem_generator = ProblemGenerator(problem_config.to_dict())
-        
-        # Player 2: Solution Generator (7B with QLoRA)
+
+        # Player 2: Solution Generator (1.5B with QLoRA)
         solution_config = PlayerConfig(
             model_name=self.config['models']['solution_generator']['name'],
             max_length=self.config['models']['solution_generator']['max_length'],
             temperature=self.config['models']['solution_generator']['temperature'],
             top_p=self.config['models']['solution_generator']['top_p'],
             quantization=self.config['models']['solution_generator']['quantization'],
-            lora_rank=self.config['models']['solution_generator']['lora_rank']
+            lora_rank=self.config['models']['solution_generator']['lora_rank'],
+            device=device_assignments['solution']
         )
         self.solution_generator = SolutionGenerator(solution_config.to_dict())
-        
+
         # Player 3: Verification Generator (1.5B)
         verification_config = PlayerConfig(
             model_name=self.config['models']['verification_generator']['name'],
@@ -122,10 +151,11 @@ class SRAGVOrchestrator:
             temperature=self.config['models']['verification_generator']['temperature'],
             top_p=self.config['models']['verification_generator']['top_p'],
             lora_rank=32,
-            lora_alpha=64
+            lora_alpha=64,
+            device=device_assignments['verification']
         )
         self.verification_generator = VerificationGenerator(verification_config.to_dict())
-        
+
         # Player 4: Meta-Verifier (0.5B)
         meta_config = PlayerConfig(
             model_name=self.config['models']['meta_verifier']['name'],
@@ -133,17 +163,18 @@ class SRAGVOrchestrator:
             temperature=self.config['models']['meta_verifier']['temperature'],
             top_p=self.config['models']['meta_verifier']['top_p'],
             lora_rank=16,  # Smaller for 0.5B model
-            lora_alpha=32
+            lora_alpha=32,
+            device=device_assignments['meta']
         )
         self.meta_verifier = MetaVerifier(meta_config.to_dict())
-        
+
         # Load all models (sequential to avoid meta tensor issues)
         logger.info("Loading models...")
         self.problem_generator.load_model()
         self.solution_generator.load_model()
         self.verification_generator.load_model()
         self.meta_verifier.load_model()
-        
+
         logger.info("All 4 players initialized successfully")
     
     def initialize_data_loaders(self):

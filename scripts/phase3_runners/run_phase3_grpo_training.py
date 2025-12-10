@@ -84,18 +84,27 @@ def run_phase3_grpo_training():
 
     logger.info("=" * 80)
     logger.info("SRAG-V PHASE 3: GRPO SELF-PLAY TRAINING (PILOT)")
-    logger.info("🔧 CODE VERSION: FIXED - Gradients enabled, KeyError resolved")
+    logger.info("🔧 CODE VERSION: v10 - Fixed multi-GPU backward pass (per-role backward)")
     logger.info("=" * 80)
     logger.info("Model: Qwen2.5-Coder-1.5B-Instruct (calibrated)")
     logger.info("Method: 4-player GRPO with execution feedback")
-    logger.info("Iterations: 5 (pilot to validate architecture)")
-    logger.info("Problems per iteration: 20")
-    logger.info("Expected duration: 5-6 hours")
-    logger.info("Expected cost: $40-50")
-    logger.info("Fixes applied:")
-    logger.info("  ✅ Gradient bug fixed (removed no_grad from log_prob computation)")
+    logger.info("Pilot scope: 3 iterations, 10 problems/iter (fast validation)")
+    logger.info("Group size: 8 (research-valid, maintained)")
+    logger.info("Expected duration: 2-3 hours (reduced from 6)")
+    logger.info("Expected cost: $15-25 (reduced from $50)")
+    logger.info("Memory optimizations:")
+    logger.info("  ✅ Gradient accumulation (4 chunks - processes 2-3 prompts at a time)")
+    logger.info("  ✅ Gradient checkpointing enabled (50% activation memory reduction)")
+    logger.info("  ✅ fp16 precision for all models (50% weight/gradient reduction)")
+    logger.info("  ✅ Expected memory: ~20-25GB per GPU (was ~80GB)")
+    logger.info("Multi-GPU distribution:")
+    logger.info("  ✅ GPU 0: Problem + Verification Generators")
+    logger.info("  ✅ GPU 1: Solution + Meta-Verifier")
+    logger.info("Previous fixes:")
+    logger.info("  ✅ Input tensors move to model's device")
+    logger.info("  ✅ Device parameter passed to all 4 players")
+    logger.info("  ✅ Gradient bug fixed (removed no_grad from log_prob)")
     logger.info("  ✅ KeyError fixed (handles question/description fields)")
-    logger.info("  ✅ JSON cleaning improved (verification generator)")
     logger.info("=" * 80)
 
     results = {
@@ -139,18 +148,19 @@ def run_phase3_grpo_training():
         logger.info("Stage 2: Configuring GRPO self-play...")
         stage_start = time.time()
 
-        # Pilot config: 5 iterations to validate architecture
+        # Pilot config: 3 iterations, 10 problems for fast validation
+        # Sufficient to verify GRPO works before scaling to full Phase 3
         self_play_config = SelfPlayConfig(
-            num_iterations=5,
-            bootstrap_iterations=2,
-            competitive_iterations=2,
+            num_iterations=3,  # Reduced from 5 for faster/cheaper pilot
+            bootstrap_iterations=1,
+            competitive_iterations=1,
             league_iterations=1,
 
-            problems_per_iteration=20,  # Reduced for pilot
-            solutions_per_problem=8,
+            problems_per_iteration=10,  # Reduced from 20 for pilot (still validates architecture)
+            solutions_per_problem=8,  # Tied to group_size, must maintain
             test_cases_per_problem=8,
 
-            gradient_accumulation_steps=4,
+            gradient_accumulation_steps=4,  # Memory efficiency: process in chunks
             mixed_precision=True,
             checkpoint_every_iterations=2,
 
