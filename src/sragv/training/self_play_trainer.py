@@ -660,7 +660,12 @@ class SelfPlayTrainer:
                 # Save checkpoint
                 if iteration % self.config.checkpoint_every_iterations == 0:
                     self._save_checkpoint(iteration)
-                
+
+                # Clear GPU cache to prevent memory accumulation across iterations
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    logger.info("GPU cache cleared after iteration")
+
                 logger.info(f"Iteration {iteration} complete - Quality: {iteration_result.get('quality_score', 0):.3f}")
             
             # Final analysis

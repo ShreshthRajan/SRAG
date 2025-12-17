@@ -83,28 +83,32 @@ def run_phase3_grpo_training():
     start_time = time.time()
 
     logger.info("=" * 80)
-    logger.info("SRAG-V PHASE 3: GRPO SELF-PLAY TRAINING (PILOT)")
-    logger.info("🔧 CODE VERSION: v10 - Fixed multi-GPU backward pass (per-role backward)")
+    logger.info("SRAG-V PHASE 3: FULL GRPO SELF-PLAY TRAINING")
+    logger.info("🔧 CODE VERSION: v16 - Fixed numpy/pyarrow/datasets compatibility")
     logger.info("=" * 80)
     logger.info("Model: Qwen2.5-Coder-1.5B-Instruct (calibrated)")
     logger.info("Method: 4-player GRPO with execution feedback")
-    logger.info("Pilot scope: 3 iterations, 10 problems/iter (fast validation)")
-    logger.info("Group size: 8 (research-valid, maintained)")
-    logger.info("Expected duration: 2-3 hours (reduced from 6)")
-    logger.info("Expected cost: $15-25 (reduced from $50)")
+    logger.info("Training scope: 15 iterations, 12 problems/iter")
+    logger.info("Group size: 6 (research-valid 4-8 range, memory-optimized)")
+    logger.info("Data: Real APPS coding problems (in-distribution for HumanEval)")
+    logger.info("Total samples: 15 × 12 × 6 = 1,080")
+    logger.info("Expected duration: 20-21 hours (fits in 24h Modal limit with 3h margin)")
+    logger.info("Expected cost: $98-105")
+    logger.info("Key improvements in v14:")
+    logger.info("  ✅ APPS dataset validation (aborts if synthetic data detected)")
+    logger.info("  ✅ Real APPS coding problems (in-distribution for HumanEval)")
+    logger.info("  ✅ group_size=6 (58 GB memory vs 78 GB with group_size=8)")
+    logger.info("  ✅ 1,080 training samples (exceeds 1,000 minimum for Phase 4 signal)")
+    logger.info("  ✅ Optimized for 24h Modal limit (15 iters × 12 probs, 3h safety margin)")
     logger.info("Memory optimizations:")
-    logger.info("  ✅ Gradient accumulation (4 chunks - processes 2-3 prompts at a time)")
-    logger.info("  ✅ Gradient checkpointing enabled (50% activation memory reduction)")
-    logger.info("  ✅ fp16 precision for all models (50% weight/gradient reduction)")
-    logger.info("  ✅ Expected memory: ~20-25GB per GPU (was ~80GB)")
+    logger.info("  ✅ Gradient accumulation (4 chunks)")
+    logger.info("  ✅ Gradient checkpointing enabled")
+    logger.info("  ✅ fp16 precision for all models")
+    logger.info("  ✅ GPU cache clearing between iterations")
+    logger.info("  ✅ Expected memory: ~25-30GB per GPU (safe)")
     logger.info("Multi-GPU distribution:")
     logger.info("  ✅ GPU 0: Problem + Verification Generators")
     logger.info("  ✅ GPU 1: Solution + Meta-Verifier")
-    logger.info("Previous fixes:")
-    logger.info("  ✅ Input tensors move to model's device")
-    logger.info("  ✅ Device parameter passed to all 4 players")
-    logger.info("  ✅ Gradient bug fixed (removed no_grad from log_prob)")
-    logger.info("  ✅ KeyError fixed (handles question/description fields)")
     logger.info("=" * 80)
 
     results = {
@@ -144,25 +148,61 @@ def run_phase3_grpo_training():
         }
         logger.info(f"✅ Stage 1 complete ({results['stages']['initialization']['duration']:.1f}s)")
 
+        # CRITICAL: Validate APPS dataset loads successfully
+        logger.info("=" * 80)
+        logger.info("VALIDATING APPS DATASET (CRITICAL CHECK)")
+        logger.info("=" * 80)
+
+        orchestrator.initialize_data_loaders()
+        bootstrap_problems, categorized = orchestrator.load_bootstrap_data()
+
+        # Check if we got real APPS data
+        if bootstrap_problems:
+            first_problem_source = bootstrap_problems[0].get('source', 'unknown')
+            problem_count = len(bootstrap_problems)
+
+            logger.info(f"Loaded {problem_count} problems")
+            logger.info(f"First problem source: {first_problem_source}")
+            logger.info(f"First problem ID: {bootstrap_problems[0].get('problem_id', 'unknown')}")
+
+            if first_problem_source == 'synthetic':
+                logger.error("=" * 80)
+                logger.error("❌ CRITICAL ERROR: Using SYNTHETIC data instead of APPS!")
+                logger.error("This will NOT transfer to HumanEval and Phase 4 will fail")
+                logger.error("APPS dataset failed to load - check datasets version")
+                logger.error("=" * 80)
+                raise RuntimeError("APPS dataset not loaded - using synthetic data. ABORT training.")
+            else:
+                logger.info("✅ VERIFIED: Using real APPS dataset")
+                logger.info(f"   Problem source: {first_problem_source}")
+                logger.info(f"   Total problems: {problem_count}")
+                logger.info("   In-distribution for HumanEval transfer ✅")
+        else:
+            logger.error("❌ No bootstrap problems loaded!")
+            raise RuntimeError("Failed to load any bootstrap data")
+
+        logger.info("=" * 80)
+
         # Stage 2: Configure GRPO training
         logger.info("Stage 2: Configuring GRPO self-play...")
         stage_start = time.time()
 
-        # Pilot config: 3 iterations, 10 problems for fast validation
-        # Sufficient to verify GRPO works before scaling to full Phase 3
+        # Full Phase 3 config: 15 iterations, 12 problems, group_size=6
+        # 15 × 12 × 6 = 1,080 APPS samples for in-distribution training
+        # Fits in 24h Modal limit with safe 3h margin
         self_play_config = SelfPlayConfig(
-            num_iterations=3,  # Reduced from 5 for faster/cheaper pilot
-            bootstrap_iterations=1,
-            competitive_iterations=1,
-            league_iterations=1,
+            num_iterations=15,  # Optimized for 24h Modal limit
+            bootstrap_iterations=4,
+            competitive_iterations=8,
+            league_iterations=3,
 
-            problems_per_iteration=10,  # Reduced from 20 for pilot (still validates architecture)
-            solutions_per_problem=8,  # Tied to group_size, must maintain
+            problems_per_iteration=12,  # Optimized for safe timing margin
+            solutions_per_problem=6,  # Tied to group_size (reduced from 8 for memory)
             test_cases_per_problem=8,
 
             gradient_accumulation_steps=4,  # Memory efficiency: process in chunks
             mixed_precision=True,
-            checkpoint_every_iterations=2,
+            checkpoint_every_iterations=5,  # Save every 5 iterations
 
             min_solution_accuracy=0.5,  # Lower threshold for 1.5B
             min_test_validity=0.5,

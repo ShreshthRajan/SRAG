@@ -22,8 +22,9 @@ image = (
         "accelerate>=0.25.0",
         "peft>=0.16.0",
         "bitsandbytes>=0.41.0",
-        "datasets>=2.0.0",
-        "numpy>=1.24.0",
+        "datasets==2.14.6",  # Pinned version for APPS dataset compatibility
+        "pyarrow==14.0.1",  # Compatible with datasets 2.14.6 (fixes PyExtensionType error)
+        "numpy>=1.24.0,<2.0.0",  # NumPy 1.x for binary compatibility with pyarrow/sklearn
         "pyyaml>=6.0",
         "tqdm>=4.66.0",
         "scikit-learn>=1.3.0",
@@ -38,7 +39,7 @@ volume = modal.Volume.from_name("srag-results", create_if_missing=True)
 @app.function(
     image=image,
     gpu="A100-80GB:2",  # 2×A100 = 160GB total (needed for 4-player GRPO with gradients)
-    timeout=28800,  # 8 hours (pilot run)
+    timeout=86400,  # 24 hours (Modal maximum - fits 14 iterations)
     volumes={"/results": volume}
 )
 def run_phase3_training():
@@ -47,6 +48,11 @@ def run_phase3_training():
     import sys
     import os
     import shutil
+
+    # Fix GPU memory fragmentation (critical for multi-iteration training)
+    # PyTorch's expandable segments allocator handles fragmentation better
+    # Updated to use PYTORCH_ALLOC_CONF (PYTORCH_CUDA_ALLOC_CONF is deprecated)
+    os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
     os.chdir("/workspace/srag")
 

@@ -25,7 +25,7 @@ class GRPOConfig:
     """Configuration for GRPO trainer based on July 2025 research."""
     
     # Core GRPO parameters (research-optimized)
-    group_size: int = 8  # Number of responses per prompt
+    group_size: int = 6  # Number of responses per prompt (reduced from 8 for memory safety, still research-valid 4-8 range)
     batch_size: int = 32  # Training batch size
     ppo_epochs: int = 4  # Training epochs per batch
     learning_rate: float = 1e-5  # Conservative for stability
