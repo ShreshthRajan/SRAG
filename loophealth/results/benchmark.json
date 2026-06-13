@@ -1,0 +1,155 @@
+{
+  "reward_variance": {
+    "healthy": [
+      "no-fire",
+      null
+    ],
+    "stall": [
+      "lead",
+      7
+    ],
+    "collapse": [
+      "no-fire",
+      null
+    ],
+    "hack": [
+      "no-fire",
+      null
+    ]
+  },
+  "effective_sample_fraction": {
+    "healthy": [
+      "no-fire",
+      null
+    ],
+    "stall": [
+      "lead",
+      4
+    ],
+    "collapse": [
+      "no-fire",
+      null
+    ],
+    "hack": [
+      "no-fire",
+      null
+    ]
+  },
+  "policy_entropy": {
+    "healthy": [
+      "no-fire",
+      null
+    ],
+    "stall": [
+      "no-fire",
+      null
+    ],
+    "collapse": [
+      "lead",
+      2
+    ],
+    "hack": [
+      "no-fire",
+      null
+    ]
+  },
+  "spectral_entropy": {
+    "healthy": [
+      "no-fire",
+      null
+    ],
+    "stall": [
+      "no-fire",
+      null
+    ],
+    "collapse": [
+      "lead",
+      3
+    ],
+    "hack": [
+      "no-fire",
+      null
+    ]
+  },
+  "output_diversity": {
+    "healthy": [
+      "no-fire",
+      null
+    ],
+    "stall": [
+      "no-fire",
+      null
+    ],
+    "collapse": [
+      "lead",
+      5
+    ],
+    "hack": [
+      "no-fire",
+      null
+    ]
+  },
+  "ece": {
+    "healthy": [
+      "no-fire",
+      null
+    ],
+    "stall": [
+      "no-fire",
+      null
+    ],
+    "collapse": [
+      "no-fire",
+      null
+    ],
+    "hack": [
+      "lead",
+      3
+    ]
+  },
+  "reward_heldout_gap": {
+    "healthy": null,
+    "stall": null,
+    "collapse": null,
+    "hack": [
+      "lead",
+      3
+    ]
+  },
+  "rolling_variance": {
+    "healthy": [
+      "no-fire",
+      null
+    ],
+    "stall": [
+      "no-fire",
+      null
+    ],
+    "collapse": [
+      "no-fire",
+      null
+    ],
+    "hack": [
+      "no-fire",
+      null
+    ]
+  },
+  "lag1_autocorr": {
+    "healthy": [
+      "FALSE-ALARM",
+      4
+    ],
+    "stall": [
+      "lead",
+      10
+    ],
+    "collapse": [
+      "lead",
+      22
+    ],
+    "hack": [
+      "lead",
+      2
+    ]
+  }
+}

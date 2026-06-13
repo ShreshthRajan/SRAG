@@ -1,0 +1,50 @@
+[
+  {
+    "label": "grpo_iteration_10/meta_verifier_adapter",
+    "path": "checkpoints/phase3_grpo/grpo_iteration_10/grpo_iteration_10/meta_verifier_adapter/adapter_model.safetensors",
+    "lora_B_total": 96,
+    "lora_B_zero": 96,
+    "zero_fraction": 1.0,
+    "learned": false
+  },
+  {
+    "label": "grpo_iteration_10/problem_generator_adapter",
+    "path": "checkpoints/phase3_grpo/grpo_iteration_10/grpo_iteration_10/problem_generator_adapter/adapter_model.safetensors",
+    "lora_B_total": 112,
+    "lora_B_zero": 0,
+    "zero_fraction": 0.0,
+    "learned": true
+  },
+  {
+    "label": "grpo_iteration_10/verification_generator_adapter",
+    "path": "checkpoints/phase3_grpo/grpo_iteration_10/grpo_iteration_10/verification_generator_adapter/adapter_model.safetensors",
+    "lora_B_total": 112,
+    "lora_B_zero": 112,
+    "zero_fraction": 1.0,
+    "learned": false
+  },
+  {
+    "label": "grpo_iteration_20/meta_verifier_adapter",
+    "path": "checkpoints/phase3_grpo/grpo_iteration_20/meta_verifier_adapter/adapter_model.safetensors",
+    "lora_B_total": 96,
+    "lora_B_zero": 96,
+    "zero_fraction": 1.0,
+    "learned": false
+  },
+  {
+    "label": "grpo_iteration_20/problem_generator_adapter",
+    "path": "checkpoints/phase3_grpo/grpo_iteration_20/problem_generator_adapter/adapter_model.safetensors",
+    "lora_B_total": 112,
+    "lora_B_zero": 0,
+    "zero_fraction": 0.0,
+    "learned": true
+  },
+  {
+    "label": "grpo_iteration_20/verification_generator_adapter",
+    "path": "checkpoints/phase3_grpo/grpo_iteration_20/verification_generator_adapter/adapter_model.safetensors",
+    "lora_B_total": 112,
+    "lora_B_zero": 112,
+    "zero_fraction": 1.0,
+    "learned": false
+  }
+]

@@ -1,0 +1,8 @@
+# Pinned for Colab Pro (CUDA). Local CPU smoke needs only torch/transformers/peft/numpy/matplotlib.
+torch>=2.2
+transformers>=4.44
+peft>=0.11
+safetensors>=0.4
+numpy>=1.24
+matplotlib>=3.7
+accelerate>=0.30

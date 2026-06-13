@@ -1,0 +1,31 @@
+{
+  "_README": "ARCHIVED v1 real-model run (Qwen2.5-Coder-1.5B-Instruct + MBPP, 4 regimes x 10 iters, group_size=8, n_problems=12). Captured verbatim from the Colab run output on 2026-06-08. SUPERSEDED by v2 (which adds real policy_entropy/spectral_entropy, pass@1/pass@k, mode-amplification collapse, gameable hack) but kept as the first real-model record. NOTE: v1 had policy_entropy and spectral_entropy hardcoded to 0.0 (a bug, fixed in v2), and did not track loop_reward/pass@k. Series here are the five v1 actually computed.",
+  "healthy": {
+    "heldout": [0.526, 0.548, 0.576, 0.583, 0.625, 0.618, 0.663, 0.674, 0.674, 0.677],
+    "reward_variance": [0.0775, 0.0804, 0.0599, 0.0668, 0.0593, 0.0596, 0.0508, 0.0495, 0.0495, 0.0514],
+    "effective_sample_fraction": [0.67, 0.67, 0.58, 0.42, 0.50, 0.42, 0.25, 0.33, 0.33, 0.42],
+    "ece": [0.102, 0.099, 0.111, 0.117, 0.058, 0.089, 0.088, 0.055, 0.080, 0.064],
+    "output_diversity": [0.862, 0.860, 0.859, 0.859, 0.858, 0.859, 0.857, 0.860, 0.860, 0.857]
+  },
+  "stall": {
+    "heldout": [0.417, 0.417, 0.444, 0.444, 0.444, 0.444, 0.444, 0.444, 0.444, 0.444],
+    "reward_variance": [0.0081, 0.0081, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "effective_sample_fraction": [0.67, 0.67, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "ece": [0.255, 0.246, 0.218, 0.218, 0.218, 0.218, 0.218, 0.218, 0.218, 0.218],
+    "output_diversity": [0.786, 0.789, 0.776, 0.776, 0.776, 0.776, 0.776, 0.776, 0.776, 0.776]
+  },
+  "collapse": {
+    "heldout": [0.526, 0.534, 0.597, 0.576, 0.576, 0.576, 0.576, 0.576, 0.576, 0.576],
+    "reward_variance": [0.0775, 0.0636, 0.0631, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "effective_sample_fraction": [0.67, 0.67, 0.50, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "ece": [0.102, 0.095, 0.074, 0.069, 0.069, 0.069, 0.069, 0.069, 0.069, 0.069],
+    "output_diversity": [0.862, 0.861, 0.857, 0.860, 0.860, 0.860, 0.860, 0.860, 0.860, 0.860]
+  },
+  "hack": {
+    "heldout": [0.526, 0.537, 0.566, 0.549, 0.566, 0.507, 0.483, 0.507, 0.531, 0.545],
+    "reward_variance": [0.0267, 0.0249, 0.0247, 0.0265, 0.0217, 0.0238, 0.0224, 0.0185, 0.0141, 0.0128],
+    "effective_sample_fraction": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.92, 1.0],
+    "ece": [0.102, 0.084, 0.128, 0.099, 0.087, 0.175, 0.185, 0.087, 0.098, 0.130],
+    "output_diversity": [0.862, 0.861, 0.862, 0.862, 0.861, 0.859, 0.856, 0.851, 0.845, 0.845]
+  }
+}

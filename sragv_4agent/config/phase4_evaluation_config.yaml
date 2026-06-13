@@ -1,0 +1,274 @@
+# SRAG-V Phase 4: Comprehensive Evaluation Configuration
+# Research-grade evaluation settings for ICML publication
+
+# =============================================================================
+# CORE EVALUATION SETTINGS
+# =============================================================================
+
+evaluation:
+  # Dataset configuration
+  max_test_problems: 200  # Number of test problems to evaluate (start conservative)
+  max_solutions_per_problem: 5  # Solutions to generate per problem
+  evaluation_temperature: 0.8  # Generation temperature
+  timeout_per_problem: 300  # Timeout in seconds (5 minutes)
+  
+  # Problem difficulty filtering
+  include_difficulties:
+    - "introductory"
+    - "interview" 
+    - "competition"  # Include for transfer learning
+  
+  # Model comparison
+  baseline_model: "phase1_baseline"
+  treatment_models:
+    - "phase3_trained"
+  
+  # Performance metrics to compute
+  performance_metrics:
+    - "accuracy"
+    - "pass_at_k"
+    - "execution_success_rate"
+    - "syntax_validity_rate"
+    - "average_confidence"
+
+# =============================================================================
+# CALIBRATION ANALYSIS SETTINGS
+# =============================================================================
+
+calibration:
+  # Binning strategy for reliability diagrams
+  n_bins: 15
+  bin_strategy: "uniform"  # "uniform", "quantile", "adaptive"
+  min_bin_size: 10
+  
+  # Confidence intervals for analysis
+  confidence_intervals: [0.80, 0.90, 0.95, 0.99]
+  
+  # Calibration metrics to compute
+  metrics:
+    - "ece"  # Expected Calibration Error
+    - "mce"  # Maximum Calibration Error  
+    - "ace"  # Average Calibration Error
+    - "brier_score"
+    - "log_loss"
+  
+  # Bayesian calibration assessment
+  bayesian_analysis:
+    enabled: true
+    credible_intervals: [0.80, 0.90, 0.95]
+    prediction_interval_coverage: true
+
+# =============================================================================
+# DATA EFFICIENCY ANALYSIS
+# =============================================================================
+
+data_efficiency:
+  # Pseudo-label ablation study points
+  ablation_points: [0, 72, 144, 216, 288, 360, 432]
+  
+  # Efficiency metrics
+  metrics:
+    - "performance_per_label"
+    - "data_efficiency_ratio"
+    - "marginal_gains"
+  
+  # Learning curve analysis
+  learning_curves:
+    enabled: true
+    smooth_window: 3
+    extrapolation: true
+
+# =============================================================================
+# TRANSFER LEARNING EVALUATION
+# =============================================================================
+
+transfer_learning:
+  # Target domains for transfer evaluation
+  target_domains:
+    - "codecontests"  # Different competitive programming
+    - "humaneval"     # Function completion tasks
+    - "mbpp"          # Python programming problems
+  
+  # Transfer metrics
+  transfer_metrics:
+    - "zero_shot_accuracy"
+    - "domain_adaptation_rate"
+    - "cross_domain_calibration"
+  
+  # Domain analysis
+  domain_analysis:
+    enabled: true
+    similarity_metrics: ["keyword_overlap", "complexity_score"]
+
+# =============================================================================
+# ABLATION STUDIES
+# =============================================================================
+
+ablation_studies:
+  # Components to ablate
+  components:
+    strategic_oracle:
+      enabled: true
+      comparison: "random_selection"
+    
+    bayesian_pseudo_labeling:
+      enabled: true  
+      comparison: "confidence_thresholding"
+    
+    adaptive_thresholds:
+      enabled: true
+      comparison: "fixed_thresholds"
+    
+    star_architecture:
+      enabled: true
+      comparison: "standard_training"
+  
+  # Ablation metrics
+  metrics:
+    - "component_contribution"
+    - "interaction_effects"
+    - "individual_importance"
+
+# =============================================================================
+# STATISTICAL VALIDATION
+# =============================================================================
+
+statistical_validation:
+  # Significance testing
+  alpha: 0.05
+  power_threshold: 0.80
+  confidence_level: 0.95
+  
+  # Multiple comparison correction
+  multiple_comparison_correction: "bonferroni"
+  family_wise_error_rate: 0.05
+  
+  # Bootstrap settings
+  bootstrap_samples: 10000
+  bootstrap_ci_method: "percentile"
+  
+  # Effect size interpretation
+  effect_size_thresholds:
+    small: 0.2
+    medium: 0.5  
+    large: 0.8
+    very_large: 1.2
+  
+  # Practical significance thresholds
+  practical_significance:
+    accuracy_threshold: 0.05    # 5% improvement
+    ece_threshold: 0.01         # 1% ECE improvement
+    calibration_threshold: 0.02  # 2% calibration improvement
+
+# =============================================================================
+# VISUALIZATION & REPORTING
+# =============================================================================
+
+visualization:
+  # Figure generation settings
+  figure_format: "png"
+  figure_dpi: 300
+  figure_style: "seaborn"
+  color_palette: "husl"
+  
+  # Figures to generate
+  figures:
+    - "performance_comparison"
+    - "reliability_diagram"
+    - "confidence_histogram"
+    - "learning_curves"
+    - "calibration_heatmap"
+    - "ablation_results"
+    - "transfer_learning_matrix"
+  
+  # Publication quality settings
+  publication_ready: true
+  include_error_bars: true
+  include_significance_markers: true
+
+reporting:
+  # Report formats
+  formats: ["json", "html", "pdf"]
+  
+  # Report sections
+  sections:
+    - "executive_summary"
+    - "methodology"
+    - "performance_results"
+    - "calibration_analysis"
+    - "statistical_validation"
+    - "ablation_studies"
+    - "transfer_learning"
+    - "conclusions_recommendations"
+  
+  # Supplementary materials
+  supplementary:
+    include_raw_data: true
+    include_code: true
+    include_hyperparameters: true
+    include_reproducibility_info: true
+
+# =============================================================================
+# COMPUTATIONAL RESOURCES
+# =============================================================================
+
+resources:
+  # Parallelization
+  max_parallel_evaluations: 4
+  use_gpu_if_available: true
+  
+  # Memory management
+  batch_size_limit: 32
+  memory_cleanup_frequency: 10  # Every N problems
+  
+  # Checkpointing
+  save_intermediate_results: true
+  checkpoint_frequency: 50  # Every N problems
+  
+  # Timeout handling
+  graceful_timeout: true
+  partial_results_on_timeout: true
+
+# =============================================================================
+# REPRODUCIBILITY
+# =============================================================================
+
+reproducibility:
+  # Random seeds
+  random_seed: 42
+  torch_seed: 42
+  numpy_seed: 42
+  
+  # Environment tracking
+  track_dependencies: true
+  save_environment_info: true
+  
+  # Data versioning
+  data_version_tracking: true
+  model_version_tracking: true
+  
+  # Audit trail
+  detailed_logging: true
+  save_intermediate_states: true
+
+# =============================================================================
+# QUALITY ASSURANCE
+# =============================================================================
+
+quality_assurance:
+  # Validation checks
+  validate_inputs: true
+  validate_outputs: true
+  sanity_checks: true
+  
+  # Error handling
+  graceful_error_recovery: true
+  detailed_error_logging: true
+  
+  # Data integrity
+  check_data_consistency: true
+  validate_metrics_computation: true
+  
+  # Result verification
+  cross_validate_key_results: true
+  statistical_sanity_checks: true

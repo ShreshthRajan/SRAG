@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loophealth"
+version = "0.1.0"
+description = "Per-prompt monitor for silent exploration/coverage collapse in self-improvement (RLVR) loops"
+readme = "loophealth/README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = ["numpy>=1.21"]
+
+[project.optional-dependencies]
+trl = ["trl>=0.9", "transformers>=4.40", "torch>=2.0"]
+experiments = ["torch>=2.0", "transformers>=4.40", "datasets>=2.0", "peft>=0.10", "accelerate", "matplotlib"]
+
+[tool.setuptools]
+packages = ["loophealth"]

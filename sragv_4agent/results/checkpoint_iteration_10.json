@@ -1,0 +1,70 @@
+{
+  "iteration": 10,
+  "config": {
+    "num_iterations": 14,
+    "bootstrap_iterations": 4,
+    "competitive_iterations": 7,
+    "league_iterations": 3,
+    "problems_per_iteration": 12,
+    "dynamic_problem_generation": true,
+    "problem_difficulty_scaling": true,
+    "solutions_per_problem": 6,
+    "test_cases_per_problem": 8,
+    "archive_sampling_probability": 0.3,
+    "gradient_accumulation_steps": 8,
+    "mixed_precision": true,
+    "checkpoint_every_iterations": 5,
+    "track_emergent_behaviors": true,
+    "behavior_analysis_frequency": 5,
+    "novel_pattern_threshold": 0.8,
+    "min_solution_accuracy": 0.5,
+    "min_test_validity": 0.5,
+    "convergence_threshold": 0.05
+  },
+  "training_history": [],
+  "convergence_metrics": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "behavior_summary": {
+    "total_iterations_analyzed": 2,
+    "novel_patterns_discovered": 96,
+    "complexity_evolution": {
+      "overall_trend": 0.0,
+      "complexity_increase": "False",
+      "final_complexity": 0.0,
+      "complexity_range": 0.0
+    },
+    "strategy_diversity": {
+      "unique_approaches": 1,
+      "unique_coverage_types": 1,
+      "approach_distribution": {
+        "standard_testing": 192
+      },
+      "coverage_distribution": {
+        "unknown": 192
+      },
+      "diversity_score": 1
+    },
+    "emergent_behavior_trends": {
+      "recent_emergent_strategies": 0,
+      "novel_pattern_rate_per_iteration": 0.0,
+      "breakthrough_potential": false
+    },
+    "breakthrough_indicators": {
+      "high_complexity_evolution": false,
+      "novel_strategy_combinations": false,
+      "consistent_pattern_discovery": true,
+      "emergent_meta_strategies": false,
+      "breakthrough_score": 0.25
+    }
+  }
+}
